@@ -8,6 +8,7 @@
     "backend",
     "npm-app",
     "web",
+    "cli",
     "test",
     "packages/*",
     "scripts"
