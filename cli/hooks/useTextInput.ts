@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { useInput, type Key } from 'ink'
 import { Cursor } from '../utils/Cursor.js'
 import { getImageFromClipboard } from '../utils/imagePaste.js'
@@ -19,11 +19,13 @@ function mapInput(input_map: Array<[string, InputHandler]>): InputMapper {
 type UseTextInputProps = {
   value: string
   onChange: (value: string) => void
+  offset: number
+  setOffset: (offset: number) => void
   onSubmit?: (value: string) => void
   onHistoryUp?: () => void
   onHistoryDown?: () => void
   onHistoryReset?: () => void
-  onTogglePreview?: () => void
+  onTogglePreview: () => void
   multiline?: boolean
   disableCursorMovementForUpDownKeys?: boolean
   columns?: number
@@ -42,6 +44,8 @@ type UseTextInputResult = {
 export function useTextInput({
   value,
   onChange,
+  offset,
+  setOffset,
   onSubmit,
   onHistoryUp,
   onHistoryDown,
@@ -52,7 +56,6 @@ export function useTextInput({
   columns = process.stdout.columns || 80,
   onImagePaste,
 }: UseTextInputProps): UseTextInputResult {
-  const [offset, setOffset] = useState(0)
   const [lastEscTime, setLastEscTime] = useState(0)
 
   const cursor = Cursor.fromText(value, columns, offset)
@@ -186,6 +189,13 @@ export function useTextInput({
       return () => handleEscape()
     }
 
+    if (key.shift && key.tab) {
+      return () => {
+        onTogglePreview()
+        return cursor
+      }
+    }
+
     if (key.ctrl) {
       return (input) => handleCtrl(input)
     }
@@ -255,11 +265,6 @@ export function useTextInput({
   }
 
   useInput((input, key) => {
-    if (key.tab && onTogglePreview) {
-      onTogglePreview()
-      return
-    }
-
     const nextCursor = mapKey(key)(input)
     if (nextCursor && !cursor.equals(nextCursor)) {
       setOffset(nextCursor.offset)
