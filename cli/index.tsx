@@ -1,8 +1,8 @@
 import React, { useState, useMemo, useEffect, useRef } from 'react'
-import { render, Box, Text, Static, Spacer, Newline } from 'ink'
-import { useTextInput } from './hooks/useTextInput'
-import { useTerminalSize } from './hooks/useTerminalSize'
-import { useDelta } from './hooks/useDelta'
+import { render, Box, Text, Spacer, Newline, Static } from 'ink'
+import { useTextInput } from './hooks/useTextInput.js'
+import { useTerminalSize } from './hooks/useTerminalSize.js'
+import { useStaticMessages } from './hooks/useStaticMessages.js'
 
 import Divider from './components/Divider.js'
 import HelperBar from './components/HelperBar.js'
@@ -10,6 +10,9 @@ import HelperBar from './components/HelperBar.js'
 const COMMAND_ITEMS = ['help', 'undo', 'diff', 'checkpoints', 'quit']
 const SHORTCUT_ITEMS = ['↑/↓ history', 'Shift+Tab expand']
 const DETAIL_SHORTCUT_ITEMS = ['Shift+Tab return']
+const STREAM_DELAY_MS = 100
+
+const WELCOME_MESSAGE_CONTENT = `Welcome to Codebuff • Reading/writing to ${process.cwd()}\n\nI'm Codebuff, an AI assistant. I can help you understand and modify code, explain concepts, and answer questions.\nI'll try to be clear and concise in my responses.`
 
 type Message = {
   id: string
@@ -104,21 +107,104 @@ function MessageDetail({
   )
 }
 
+const welcomeMessage: Message = {
+  id: 'welcome',
+  type: 'assistant',
+  content: WELCOME_MESSAGE_CONTENT,
+  timestamp: new Date(),
+}
+
 function Demo() {
   const { columns: width } = useTerminalSize()
   const [input, setInput] = useState('')
   const [offset, setOffset] = useState(0)
   const [selectedIndex, setSelectedIndex] = useState(-1)
   const [previewMode, setPreviewMode] = useState(false)
-  const [messages, setMessages] = useState<Message[]>([
-    {
-      id: 'welcome',
-      type: 'assistant',
-      content: `Welcome to Codebuff • Reading/writing to ${process.cwd()}\n\nI'm Codebuff, an AI assistant. I can help you understand and modify code, explain concepts, and answer questions.\nI'll try to be clear and concise in my responses.`,
-      timestamp: new Date(),
-    },
-  ])
-  const messagesDelta = useDelta(messages)
+  const [showWelcomeMessage, setShowWelcomeMessage] = useState(true)
+  const [messages, setMessages] = useState<Message[]>([])
+
+  const latestMessage = messages[messages.length - 1]
+  const historicalMessages = messages.slice(0, -1)
+
+  const historicalMessagesElements = useStaticMessages(
+    historicalMessages,
+    (msg: Message) => (
+      <Box
+        key={msg.id}
+        paddingX={1}
+        paddingY={0}
+        marginTop={msg.type === 'user' ? 1 : 0}
+      >
+        <MessagePreview message={msg} width={width} />
+      </Box>
+    )
+  )
+
+  const [streamedMessageContent, setStreamedMessageContent] = useState<
+    string | undefined
+  >(undefined)
+  const streamTimeoutRef = useRef<NodeJS.Timeout | null>(null)
+  const wordsRef = useRef<string[]>([])
+  const currentWordIndexRef = useRef<number>(0)
+
+  useEffect(() => {
+    if (streamTimeoutRef.current) {
+      clearTimeout(streamTimeoutRef.current)
+      streamTimeoutRef.current = null
+    }
+
+    if (latestMessage?.type === 'assistant') {
+      const fullContent = latestMessage.content
+      wordsRef.current = fullContent.split(/(\s+)/)
+      currentWordIndexRef.current = 0
+      const totalWords = wordsRef.current.length
+      const initialDelay = STREAM_DELAY_MS
+      setStreamedMessageContent('')
+
+      const stream = () => {
+        if (currentWordIndexRef.current < totalWords) {
+          const chunkSize = Math.floor(Math.random() * 4) + 1
+          const nextWordIndex = Math.min(
+            currentWordIndexRef.current + chunkSize,
+            totalWords
+          )
+          const nextChunkText = wordsRef.current
+            .slice(0, nextWordIndex)
+            .join('')
+
+          setStreamedMessageContent(nextChunkText)
+          currentWordIndexRef.current = nextWordIndex
+
+          if (currentWordIndexRef.current < totalWords) {
+            streamTimeoutRef.current = setTimeout(
+              stream,
+              STREAM_DELAY_MS
+            ) as NodeJS.Timeout
+          } else {
+            setStreamedMessageContent(undefined)
+            streamTimeoutRef.current = null
+          }
+        } else {
+          setStreamedMessageContent(undefined)
+          streamTimeoutRef.current = null
+        }
+      }
+      streamTimeoutRef.current = setTimeout(
+        stream,
+        initialDelay
+      ) as NodeJS.Timeout
+    } else {
+      setStreamedMessageContent(undefined)
+      wordsRef.current = []
+      currentWordIndexRef.current = 0
+    }
+
+    return () => {
+      if (streamTimeoutRef.current) {
+        clearTimeout(streamTimeoutRef.current)
+      }
+    }
+  }, [latestMessage?.id])
 
   useEffect(() => {
     return () => {
@@ -140,6 +226,7 @@ function Demo() {
         process.stdout.write('\x1b[?1049h')
         process.stdout.write('\x1b[2J\x1b[0;0H')
         setPreviewMode(true)
+        setShowWelcomeMessage(false)
       } catch (e) {
         console.error('Failed to enter alternate screen mode:', e)
       }
@@ -253,6 +340,13 @@ function Demo() {
     return undefined
   }, [previewMode, selectedIndex, messages])
 
+  const latestMessageDisplayContent =
+    latestMessage?.type === 'assistant'
+      ? streamedMessageContent !== undefined
+        ? streamedMessageContent
+        : latestMessage.content
+      : latestMessage?.content
+
   if (selectedUserMessage) {
     return (
       <Box height="100%" width="100%">
@@ -263,20 +357,37 @@ function Demo() {
 
   return (
     <>
-      <Static
-        items={messagesDelta.map((msg) => (
-          <Box
-            key={msg.id}
-            paddingX={1}
-            paddingY={0}
-            marginTop={msg.type === 'user' ? 1 : 0}
-          >
-            <MessagePreview message={msg} width={width} />
-          </Box>
-        ))}
-      >
-        {(item) => item}
-      </Static>
+      {showWelcomeMessage && (
+        <Static items={[welcomeMessage]}>
+          {(element) => (
+            <Box paddingX={1} paddingY={0} key={element.id}>
+              <Text>{element.content}</Text>
+            </Box>
+          )}
+        </Static>
+      )}
+
+      {historicalMessagesElements && (
+        <Static items={historicalMessagesElements}>
+          {(element) => element}
+        </Static>
+      )}
+
+      {latestMessage && (
+        <Box
+          paddingX={1}
+          paddingY={0}
+          marginTop={latestMessage.type === 'user' ? 1 : 0}
+        >
+          <Text>
+            {latestMessage.type === 'user' ? '→ ' : '  '}
+            {latestMessageDisplayContent}
+            {latestMessage.type === 'assistant' &&
+              streamedMessageContent !== undefined && <Text> </Text>}
+          </Text>
+        </Box>
+      )}
+
       <Spacer />
 
       <Box marginTop={1}>

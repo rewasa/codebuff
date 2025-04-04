@@ -264,7 +264,7 @@ export function useTextInput({
     }
   }
 
-  useInput((input, key) => {
+  useInput((input: string, key: Key) => {
     const nextCursor = mapKey(key)(input)
     if (nextCursor && !cursor.equals(nextCursor)) {
       setOffset(nextCursor.offset)
