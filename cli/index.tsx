@@ -1,8 +1,14 @@
-import React, { useState, useMemo, useEffect } from 'react'
+import React, { useState, useMemo, useEffect, useRef } from 'react'
 import { render, Box, Text, Static, Spacer, Newline } from 'ink'
 import { useTextInput } from './hooks/useTextInput'
 import { useTerminalSize } from './hooks/useTerminalSize'
-import figlet from 'figlet'
+
+import Divider from './components/Divider.js'
+import HelperBar from './components/HelperBar.js'
+
+const COMMAND_ITEMS = ['help', 'undo', 'diff', 'checkpoints', 'quit']
+const SHORTCUT_ITEMS = ['↑/↓ history', 'Shift+Tab expand']
+const DETAIL_SHORTCUT_ITEMS = ['Shift+Tab return']
 
 type Message = {
   id: string
@@ -51,22 +57,43 @@ function MessagePreview({
   )
 }
 
-function MessageDetail({ message }: { message: Message }) {
+function MessageDetail({
+  message,
+  messages,
+}: {
+  message: Message
+  messages: Message[]
+}) {
+  const { rows } = useTerminalSize()
+  const messageGroup = messages.filter(
+    (m) => m.id === message.id || m.userMessageId === message.id
+  )
+
   return (
-    <Box flexDirection="column" padding={1}>
-      <Box marginBottom={1}>
-        <Text bold>
-          {message.type === 'assistant' ? 'Assistant' : 'You'}
-          <Text> • </Text>
-          <Text dimColor>{message.timestamp.toLocaleTimeString()}</Text>
-          <Text dimColor> • Press Shift+Tab to return to chat</Text>
-        </Text>
-      </Box>
-      <Box marginBottom={1}>
-        <Text>{'─'.repeat(process.stdout.columns - 2)}</Text>
-      </Box>
-      <Box>
-        <Text>{message.content}</Text>
+    <Box flexDirection="column" paddingY={1} height={rows}>
+      {messageGroup.map((msg, i) => (
+        <Box
+          key={i}
+          flexDirection="column"
+          flexGrow={i === messageGroup.length - 1 ? 1 : 0}
+        >
+          <Box>
+            <Text bold>
+              {msg.type === 'assistant' ? 'Assistant' : 'You'}
+              <Text> • </Text>
+              <Text dimColor>{msg.timestamp.toLocaleTimeString()}</Text>
+            </Text>
+          </Box>
+
+          <Box padding={1}>
+            <Text>{msg.content}</Text>
+          </Box>
+        </Box>
+      ))}
+
+      <Box flexDirection="column">
+        <Divider dividerColor="grey" />
+        <HelperBar leftItems={[]} rightItems={DETAIL_SHORTCUT_ITEMS} />
       </Box>
     </Box>
   )
@@ -78,16 +105,18 @@ function Demo() {
   const [offset, setOffset] = useState(0)
   const [selectedIndex, setSelectedIndex] = useState(-1)
   const [previewMode, setPreviewMode] = useState(false)
-
   const [messages, setMessages] = useState<Message[]>([
     {
       id: 'welcome',
       type: 'assistant',
-      content:
-        "I'm Claude, an AI assistant. I can help you understand and modify code, explain concepts, and answer questions.\nI'll try to be clear and concise in my responses.\nWhat would you like help with?",
+      content: `Welcome to Codebuff • Reading/writing to ${process.cwd()}\n\nI'm Codebuff, an AI assistant. I can help you understand and modify code, explain concepts, and answer questions.\nI'll try to be clear and concise in my responses.`,
       timestamp: new Date(),
     },
   ])
+  const [renderedMessageIds, setRenderedMessageIds] = useState(
+    () => new Set<string>()
+  )
+  const isUpdatingRenderedIds = useRef(false)
 
   const getMessageGroup = (userMessageId: string) => {
     return messages.filter(
@@ -113,6 +142,7 @@ function Demo() {
     if (!previewMode && selectedIndex >= 0) {
       try {
         process.stdout.write('\x1b[?1049h')
+        process.stdout.write('\x1b[2J\x1b[0;0H')
         setPreviewMode(true)
       } catch (e) {
         console.error('Failed to enter alternate screen mode:', e)
@@ -132,14 +162,27 @@ function Demo() {
     if (previewMode) return
     setSelectedIndex((prev) => {
       const currentIndex = userMessages.findIndex((_, idx) => idx === prev)
-      const nextIndex =
-        currentIndex <= 0 ? userMessages.length - 1 : currentIndex - 1
-      if (nextIndex >= 0) {
+      const lastIndex = userMessages.length - 1
+
+      if (currentIndex === -1) {
+        if (userMessages.length > 0) {
+          const nextIndex = lastIndex
+          const content = userMessages[nextIndex].content
+          setInput(content)
+          setOffset(content.length)
+          return nextIndex
+        } else {
+          return -1
+        }
+      } else if (currentIndex === 0) {
+        return 0
+      } else {
+        const nextIndex = currentIndex - 1
         const content = userMessages[nextIndex].content
         setInput(content)
         setOffset(content.length)
+        return nextIndex
       }
-      return nextIndex
     })
   }
 
@@ -147,16 +190,21 @@ function Demo() {
     if (previewMode) return
     setSelectedIndex((prev) => {
       const currentIndex = userMessages.findIndex((_, idx) => idx === prev)
-      if (currentIndex >= userMessages.length - 1) {
+      const lastIndex = userMessages.length - 1
+
+      if (currentIndex === -1) {
+        return -1
+      } else if (currentIndex === lastIndex) {
         setInput('')
         setOffset(0)
         return -1
+      } else {
+        const nextIndex = currentIndex + 1
+        const content = userMessages[nextIndex].content
+        setInput(content)
+        setOffset(content.length)
+        return nextIndex
       }
-      const nextIndex = currentIndex + 1
-      const content = userMessages[nextIndex].content
-      setInput(content)
-      setOffset(content.length)
-      return nextIndex
     })
   }
 
@@ -192,14 +240,33 @@ function Demo() {
     disableCursorMovementForUpDownKeys: true,
   })
 
+  useEffect(() => {
+    if (isUpdatingRenderedIds.current || previewMode) {
+      return
+    }
+
+    const newIdsToAdd = messages
+      .filter((msg) => !renderedMessageIds.has(msg.id))
+      .map((msg) => msg.id)
+
+    if (newIdsToAdd.length > 0) {
+      isUpdatingRenderedIds.current = true
+      setRenderedMessageIds((prevIds) => {
+        const newSet = new Set(prevIds)
+        newIdsToAdd.forEach((id) => newSet.add(id))
+        return newSet
+      })
+      queueMicrotask(() => {
+        isUpdatingRenderedIds.current = false
+      })
+    }
+  }, [messages, previewMode, renderedMessageIds])
+
   if (previewMode && selectedIndex >= 0) {
     const selectedMessage = userMessages[selectedIndex]
-    const messageGroup = getMessageGroup(selectedMessage.id)
     return (
-      <Box flexDirection="column">
-        {messageGroup.map((msg, i) => (
-          <MessageDetail key={i} message={msg} />
-        ))}
+      <Box height="100%" width="100%">
+        <MessageDetail message={selectedMessage} messages={messages} />
       </Box>
     )
   }
@@ -207,52 +274,29 @@ function Demo() {
   return (
     <>
       <Static
-        items={[
-          <Box key="welcome-message" padding={1} flexDirection="column">
-            <Box flexDirection="row">
-              <Text bold>Welcome to Codebuff</Text>
-              <Text> • </Text>
-              <Text dimColor>Using {process.cwd()}</Text>
-            </Box>
-            <Newline />
-            <Box flexDirection="row">
-              <Text>
-                Press <Text bold>Ctrl+C</Text> twice to exit •{' '}
-                <Text bold>↑/↓</Text> to navigate history •{' '}
-                <Text bold>Shift+Tab</Text> to expand messages •{' '}
-                <Text bold>Ctrl+V</Text> to paste images
-              </Text>
-            </Box>
-          </Box>,
-          ...messages.slice(0, -1).map((msg, i) => (
+        items={messages
+          .filter((msg) => !renderedMessageIds.has(msg.id))
+          .map((msg) => (
             <Box
-              key={i}
+              key={msg.id}
               paddingX={1}
               paddingY={0}
               marginTop={msg.type === 'user' ? 1 : 0}
             >
               <MessagePreview message={msg} width={width} />
             </Box>
-          )),
-        ]}
+          ))}
       >
         {(item) => item}
       </Static>
       <Spacer />
 
-      {messages.length > 0 && (
-        <Box flexDirection="column" marginTop={1}>
-          <Box paddingX={1}>
-            <Text>
-              {messages[messages.length - 1]?.type === 'user' ? '→ ' : '  '}
-            </Text>
-            <Text>{messages[messages.length - 1]?.content}</Text>
-          </Box>
-        </Box>
-      )}
-
       <Box marginTop={1}>
-        <Text>→ </Text>
+        <Divider dividerColor="grey" />
+      </Box>
+
+      <Box marginTop={1} marginBottom={1} paddingX={1}>
+        <Text bold>→ </Text>
         {input ? (
           <Text>
             {renderedValue.beforeCursor}
@@ -260,12 +304,15 @@ function Demo() {
             {renderedValue.afterCursor}
           </Text>
         ) : (
-          <Text dimColor>
-            Ask a question or describe what you'd like help with... (↑/↓ to view
-            history, Shift+Tab to expand)
+          <Text dimColor italic>
+            what would you'd like help with?
           </Text>
         )}
       </Box>
+
+      <Divider dividerColor="grey" />
+
+      <HelperBar leftItems={COMMAND_ITEMS} rightItems={SHORTCUT_ITEMS} />
     </>
   )
 }

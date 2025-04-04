@@ -13,7 +13,7 @@
     "typescript": "^5.0.0"
   },
   "scripts": {
-    "start": "bun run src/entrypoints/cli.tsx",
-    "dev": "bun run --watch src/entrypoints/cli.tsx"
+    "start": "bun run index.tsx",
+    "dev": "bun run --watch index.tsx"
   }
 }
