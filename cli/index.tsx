@@ -2,6 +2,7 @@ import React, { useState, useMemo, useEffect, useRef } from 'react'
 import { render, Box, Text, Static, Spacer, Newline } from 'ink'
 import { useTextInput } from './hooks/useTextInput'
 import { useTerminalSize } from './hooks/useTerminalSize'
+import { useDelta } from './hooks/useDelta'
 
 import Divider from './components/Divider.js'
 import HelperBar from './components/HelperBar.js'
@@ -68,14 +69,16 @@ function MessageDetail({
   const messageGroup = messages.filter(
     (m) => m.id === message.id || m.userMessageId === message.id
   )
+  messageGroup.sort((a, b) => a.timestamp.getTime() - b.timestamp.getTime())
 
   return (
     <Box flexDirection="column" paddingY={1} height={rows}>
       {messageGroup.map((msg, i) => (
         <Box
-          key={i}
+          key={msg.id}
           flexDirection="column"
           flexGrow={i === messageGroup.length - 1 ? 1 : 0}
+          marginBottom={i < messageGroup.length - 1 ? 1 : 0}
         >
           <Box>
             <Text bold>
@@ -85,11 +88,13 @@ function MessageDetail({
             </Text>
           </Box>
 
-          <Box padding={1}>
+          <Box paddingLeft={1} paddingTop={1}>
             <Text>{msg.content}</Text>
           </Box>
         </Box>
       ))}
+
+      <Spacer />
 
       <Box flexDirection="column">
         <Divider dividerColor="grey" />
@@ -113,33 +118,24 @@ function Demo() {
       timestamp: new Date(),
     },
   ])
-  const [renderedMessageIds, setRenderedMessageIds] = useState(
-    () => new Set<string>()
-  )
-  const isUpdatingRenderedIds = useRef(false)
-
-  const getMessageGroup = (userMessageId: string) => {
-    return messages.filter(
-      (m) => m.id === userMessageId || m.userMessageId === userMessageId
-    )
-  }
-
-  const userMessages = messages.filter((m) => m.type === 'user')
+  const messagesDelta = useDelta(messages)
 
   useEffect(() => {
     return () => {
       if (previewMode) {
-        try {
-          process.stdout.write('\x1b[?1049l')
-        } catch (e) {
-          // Ignore cleanup errors
-        }
+        process.stdout.write('\x1b[?1049l')
       }
     }
   }, [previewMode])
 
   const togglePreviewMode = () => {
-    if (!previewMode && selectedIndex >= 0) {
+    const currentUserMessages = messages.filter((m) => m.type === 'user')
+    const actualSelectedIndex =
+      selectedIndex >= 0 && selectedIndex < currentUserMessages.length
+        ? selectedIndex
+        : -1
+
+    if (!previewMode && actualSelectedIndex >= 0) {
       try {
         process.stdout.write('\x1b[?1049h')
         process.stdout.write('\x1b[2J\x1b[0;0H')
@@ -160,51 +156,59 @@ function Demo() {
 
   const handleHistoryUp = () => {
     if (previewMode) return
-    setSelectedIndex((prev) => {
-      const currentIndex = userMessages.findIndex((_, idx) => idx === prev)
-      const lastIndex = userMessages.length - 1
+    setMessages((currentMessages) => {
+      const userMessages = currentMessages.filter((m) => m.type === 'user')
+      setSelectedIndex((prev) => {
+        const currentIndex = userMessages.findIndex((_, idx) => idx === prev)
+        const lastIndex = userMessages.length - 1
 
-      if (currentIndex === -1) {
-        if (userMessages.length > 0) {
-          const nextIndex = lastIndex
+        if (currentIndex === -1) {
+          if (userMessages.length > 0) {
+            const nextIndex = lastIndex
+            const content = userMessages[nextIndex].content
+            setInput(content)
+            setOffset(content.length)
+            return nextIndex
+          } else {
+            return -1
+          }
+        } else if (currentIndex === 0) {
+          return 0
+        } else {
+          const nextIndex = currentIndex - 1
           const content = userMessages[nextIndex].content
           setInput(content)
           setOffset(content.length)
           return nextIndex
-        } else {
-          return -1
         }
-      } else if (currentIndex === 0) {
-        return 0
-      } else {
-        const nextIndex = currentIndex - 1
-        const content = userMessages[nextIndex].content
-        setInput(content)
-        setOffset(content.length)
-        return nextIndex
-      }
+      })
+      return currentMessages
     })
   }
 
   const handleHistoryDown = () => {
     if (previewMode) return
-    setSelectedIndex((prev) => {
-      const currentIndex = userMessages.findIndex((_, idx) => idx === prev)
-      const lastIndex = userMessages.length - 1
+    setMessages((currentMessages) => {
+      const userMessages = currentMessages.filter((m) => m.type === 'user')
+      setSelectedIndex((prev) => {
+        const currentIndex = userMessages.findIndex((_, idx) => idx === prev)
+        const lastIndex = userMessages.length - 1
 
-      if (currentIndex === -1) {
-        return -1
-      } else if (currentIndex === lastIndex) {
-        setInput('')
-        setOffset(0)
-        return -1
-      } else {
-        const nextIndex = currentIndex + 1
-        const content = userMessages[nextIndex].content
-        setInput(content)
-        setOffset(content.length)
-        return nextIndex
-      }
+        if (currentIndex === -1) {
+          return -1
+        } else if (currentIndex === lastIndex) {
+          setInput('')
+          setOffset(0)
+          return -1
+        } else {
+          const nextIndex = currentIndex + 1
+          const content = userMessages[nextIndex].content
+          setInput(content)
+          setOffset(content.length)
+          return nextIndex
+        }
+      })
+      return currentMessages
     })
   }
 
@@ -225,6 +229,7 @@ function Demo() {
     ])
     setInput('')
     setSelectedIndex(-1)
+    setOffset(0)
   }
 
   const { renderedValue } = useTextInput({
@@ -240,33 +245,18 @@ function Demo() {
     disableCursorMovementForUpDownKeys: true,
   })
 
-  useEffect(() => {
-    if (isUpdatingRenderedIds.current || previewMode) {
-      return
+  const selectedUserMessage = useMemo(() => {
+    if (previewMode && selectedIndex >= 0) {
+      const currentUserMessages = messages.filter((m) => m.type === 'user')
+      return currentUserMessages[selectedIndex]
     }
+    return undefined
+  }, [previewMode, selectedIndex, messages])
 
-    const newIdsToAdd = messages
-      .filter((msg) => !renderedMessageIds.has(msg.id))
-      .map((msg) => msg.id)
-
-    if (newIdsToAdd.length > 0) {
-      isUpdatingRenderedIds.current = true
-      setRenderedMessageIds((prevIds) => {
-        const newSet = new Set(prevIds)
-        newIdsToAdd.forEach((id) => newSet.add(id))
-        return newSet
-      })
-      queueMicrotask(() => {
-        isUpdatingRenderedIds.current = false
-      })
-    }
-  }, [messages, previewMode, renderedMessageIds])
-
-  if (previewMode && selectedIndex >= 0) {
-    const selectedMessage = userMessages[selectedIndex]
+  if (selectedUserMessage) {
     return (
       <Box height="100%" width="100%">
-        <MessageDetail message={selectedMessage} messages={messages} />
+        <MessageDetail message={selectedUserMessage} messages={messages} />
       </Box>
     )
   }
@@ -274,18 +264,16 @@ function Demo() {
   return (
     <>
       <Static
-        items={messages
-          .filter((msg) => !renderedMessageIds.has(msg.id))
-          .map((msg) => (
-            <Box
-              key={msg.id}
-              paddingX={1}
-              paddingY={0}
-              marginTop={msg.type === 'user' ? 1 : 0}
-            >
-              <MessagePreview message={msg} width={width} />
-            </Box>
-          ))}
+        items={messagesDelta.map((msg) => (
+          <Box
+            key={msg.id}
+            paddingX={1}
+            paddingY={0}
+            marginTop={msg.type === 'user' ? 1 : 0}
+          >
+            <MessagePreview message={msg} width={width} />
+          </Box>
+        ))}
       >
         {(item) => item}
       </Static>
