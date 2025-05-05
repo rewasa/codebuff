@@ -1,0 +1,32 @@
+{
+  "name": "codebuff",
+  "version": "1.0.200",
+  "description": "Thin npm wrapper that installs the Codebuff binary",
+  "bin": {
+    "codebuff": "bin/launcher.js"
+  },
+  "scripts": {
+    "postinstall": "node scripts/postinstall.js"
+  },
+  "engines": {
+    "node": ">=14"
+  },
+  "os": [
+    "darwin",
+    "linux",
+    "win32"
+  ],
+  "cpu": [
+    "x64",
+    "arm64"
+  ],
+  "keywords": [
+    "cli",
+    "installer"
+  ],
+  "license": "MIT",
+  "dependencies": {
+    "tar": "^6.2.0",
+    "unzipper": "^0.10.11"
+  }
+}

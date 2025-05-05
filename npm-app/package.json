@@ -10,6 +10,11 @@
   },
   "scripts": {
     "prepublishOnly": "nx build npm-app && bun run clean-package.js",
+    "prebuild": "bun run with-env -- bun clean && cd ../common && bun run build && cd ../packages/code-map && bun run build",
+    "build": "nx build npm-app",
+    "postbuild": "mkdir -p dist/common && cp -r ../common/dist/* dist/common && mkdir -p dist/code-map && cp -r ../packages/code-map/dist/* dist/code-map && tsc-alias && bun build --compile src/index.ts --outfile ../npm-installer/bin/codebuff",
+    "quick-build": "tsc && tsc-alias",
+    "clean": "rm -rf dist && (rm tsconfig.tsbuildinfo || true)",
     "postpublish": "echo \"const fs=require('fs');fs.copyFileSync('temp.package.json','package.json');fs.unlinkSync('temp.package.json');\" | bun run -",
     "format": "prettier --write \"**/*.{ts,tsx,json,md}\"",
     "test": "jest",
@@ -26,7 +31,6 @@
     "start-prod": "bun run with-env -- ts-node -r tsconfig-paths/register src/index.ts",
     "typecheck-this-package": "tsc --noEmit && tsc-alias",
     "typecheck-only": "tsc --noEmit && tsc-alias",
-    "build": "nx build npm-app"
   },
   "files": [
     "dist",
