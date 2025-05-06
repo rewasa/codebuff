@@ -1,6 +1,6 @@
 {
   "name": "codebuff",
-  "version": "1.0.200",
+  "version": "1.0.297",
   "description": "Thin npm wrapper that installs the Codebuff binary",
   "bin": {
     "codebuff": "bin/launcher.js"

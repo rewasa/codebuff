@@ -18,6 +18,7 @@ __mock-projects__
 .aider*
 .codebuff*
 **.log
+bundles/
 
 debug/
 
