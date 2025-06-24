@@ -722,12 +722,68 @@ export const mainPrompt = async (
       },
     }
   }
+
+  const mcpProcessors = Object.fromEntries(
+    mcpRegistry.getToolDefinitions().map((def) => {
+      // Fix parameter extraction from Zod schema
+      const params = def.parameters instanceof z.ZodObject 
+        ? Object.keys(def.parameters.shape)
+        : []
+      
+      return [
+        def.name,
+        {
+          params,
+          onTagStart: (tagName: string) => {
+            logger.debug(`MCP tool ${tagName} started`)
+          },
+          onTagEnd: async (
+            tagName: string,
+            args: Record<string, string>
+          ) => {
+            logger.debug(`MCP tool ${tagName} ended with args:`, args)
+            const toolCall = parseRawToolCall({
+              type: 'tool-call',
+              toolName: def.name,
+              toolCallId: generateCompactId(),
+              args,
+            })
+            if ('error' in toolCall) {
+              logger.error(
+                `MCP tool ${tagName} parsing error:`,
+                toolCall.error
+              )
+              serverToolResults.push({
+                toolName: def.name,
+                toolCallId: generateCompactId(),
+                result: toolCall.error,
+              })
+              foundParsingError = true
+              return
+            }
+
+            logger.debug(
+              `MCP tool ${tagName} parsed successfully:`,
+              toolCall
+            )
+            clientToolCalls.push(toolCall as any)
+          },
+        },
+      ]
+    })
+  )
+
+  logger.debug(`MCP processors keys: ${Object.keys(mcpProcessors).join(', ')}`)
+
   const streamWithTags = processStreamWithTags(
     stream,
     {
       ...Object.fromEntries(
         TOOL_LIST.map((tool) => [tool, toolCallback(tool, () => {})])
       ),
+      // Add MCP tools to the callback map with their parameter definitions
+      ...mcpProcessors,
+
       think_deeply: toolCallback('think_deeply', (toolCall) => {
         const { thought } = toolCall.args
         logger.debug(
@@ -1126,7 +1182,8 @@ export const mainPrompt = async (
           serverToolResults.push({
             toolName: toolCall.toolName,
             toolCallId: generateCompactId(),
-            result: typeof result === 'string' ? result : JSON.stringify(result),
+            result:
+              typeof result === 'string' ? result : JSON.stringify(result),
           })
         } catch (error) {
           serverToolResults.push({
@@ -1545,3 +1602,17 @@ async function uploadExpandedFileContextForTraining(
 }
 
 import { mcpRegistry } from '@codebuff/internal/mcp'
+import { z } from 'zod'
+
+logger.debug(`Available MCP tools: ${mcpRegistry.getToolNames().join(', ')}`)
+logger.debug(
+  `MCP tool definitions: ${JSON.stringify(
+    mcpRegistry.getToolDefinitions().map((def) => ({
+      name: def.name,
+      params:
+        def.parameters instanceof z.ZodObject
+          ? Object.keys(def.parameters.shape)
+          : [],
+    }))
+  )}`
+)

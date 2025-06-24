@@ -5,6 +5,9 @@ import { flushAnalytics, initAnalytics } from '@codebuff/common/analytics'
 import cors from 'cors'
 import express from 'express'
 
+// Import MCP tools to trigger auto-registration
+import '@codebuff/internal/mcp/tools'
+
 import {
   getTracesForUserHandler,
   relabelForUserHandler,

@@ -748,6 +748,18 @@ export function parseRawToolCall(
 ): CodebuffToolCall | ToolCallError {
   const toolName = rawToolCall.toolName
 
+  // Check if it's an MCP tool first
+  const mcpTool = mcpRegistry.getTool(toolName)
+  if (mcpTool) {
+    // For MCP tools, return without strict typing validation
+    return {
+      type: 'tool-call',
+      toolName: toolName as any, // Bypass strict typing for dynamic MCP tools
+      toolCallId: rawToolCall.toolCallId,
+      args: rawToolCall.args,
+    } as any // Return as any to bypass CodebuffToolCall union constraint
+  }
+
   if (!(toolName in toolConfigs)) {
     return {
       toolName,
@@ -756,13 +768,14 @@ export function parseRawToolCall(
       error: `Tool ${toolName} not found`,
     }
   }
-  const validName = toolName as GlobalToolNameImport
+  const validName = toolName as keyof typeof toolConfigs
 
   let schema: z.ZodObject<any> | z.ZodEffects<any> =
     toolConfigs[validName].parameters
   while (schema instanceof z.ZodEffects) {
     schema = schema.innerType()
   }
+
   const processedParameters: Record<string, any> = { ...rawToolCall.args }
 
   const arrayParamPattern = /^(.+)_(\d+)$/
@@ -1115,8 +1128,14 @@ export type ClientToolCall =
 export function parseToolCalls(messageContent: string) {
   // TODO: Return a typed tool call. Typescript is hard.
   const toolCalls: RawToolCall[] = []
+  
+  // Get MCP tool names and combine with core tools
+  const mcpToolDefinitions = mcpRegistry.getToolDefinitions()
+  const mcpToolNames = mcpToolDefinitions.map(def => def.name)
+  const allToolNames = [...TOOL_LIST, ...mcpToolNames]
+  
   const toolRegex = new RegExp(
-    `<(${TOOL_LIST.join('|')})>([\\s\\S]*?)<\/\\1>`,
+    `<(${allToolNames.join('|')})>([\\s\\S]*?)<\/\\1>`,
     'g'
   )
 
