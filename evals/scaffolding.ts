@@ -20,6 +20,7 @@ import {
   getProjectFileTree,
 } from '../common/src/project-file-tree'
 import { ModelConfig } from './git-evals/types'
+import { mainPrompt } from '../backend/src/main-prompt'
 
 const DEBUG_MODE = true
 
