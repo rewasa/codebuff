@@ -1114,7 +1114,30 @@ export const mainPrompt = async (
         result: formattedResult,
       })
     } else {
-      throw new Error(`Unknown tool: ${name}`)
+      // Check if it's an MCP tool
+      const mcpTool = mcpRegistry.getTool(toolCall.toolName)
+      if (mcpTool) {
+        try {
+          const result = await mcpTool.handler(toolCall.args, {
+            projectRoot: sessionState.fileContext.projectRoot,
+            userId,
+          })
+
+          serverToolResults.push({
+            toolName: toolCall.toolName,
+            toolCallId: generateCompactId(),
+            result: typeof result === 'string' ? result : JSON.stringify(result),
+          })
+        } catch (error) {
+          serverToolResults.push({
+            toolName: toolCall.toolName,
+            toolCallId: generateCompactId(),
+            result: `Error executing MCP tool: ${error instanceof Error ? error.message : 'Unknown error'}`,
+          })
+        }
+      } else {
+        throw new Error(`Unknown tool: ${toolCall.toolName}`)
+      }
     }
   }
 
@@ -1520,3 +1543,5 @@ async function uploadExpandedFileContextForTraining(
   // Upload the files to bigquery
   await insertTrace(trace)
 }
+
+import { mcpRegistry } from '@codebuff/internal/mcp'

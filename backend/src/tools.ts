@@ -16,6 +16,7 @@ import { buildArray } from '@codebuff/common/util/array'
 import { generateCompactId } from '@codebuff/common/util/string'
 import { promptFlashWithFallbacks } from './llm-apis/gemini-with-fallbacks'
 import { gitCommitGuidePrompt } from './system-prompt/prompts'
+import { mcpRegistry } from '@codebuff/internal/mcp'
 
 // Define Zod schemas for parameter validation
 const toolConfigs = {
@@ -1215,11 +1216,14 @@ export function getFilteredToolsInstructions(
   costMode: string,
   readOnlyMode: boolean = false
 ) {
-  let allowedTools = TOOL_LIST
+  let allowedTools = [...TOOL_LIST] // existing core tools
 
-  // Filter based on cost mode
+  // Get MCP tool definitions and convert to tool names
+  const mcpToolDefinitions = mcpRegistry.getToolDefinitions()
+  const mcpToolNames = mcpToolDefinitions.map(def => def.name)
+
+  // Apply existing filtering logic to core tools
   if (costMode === 'ask' || readOnlyMode) {
-    // For ask mode, exclude write_file, str_replace, create_plan, and run_terminal_command
     allowedTools = allowedTools.filter(
       (tool) =>
         !['write_file', 'str_replace', 'run_terminal_command'].includes(tool)
@@ -1232,5 +1236,11 @@ export function getFilteredToolsInstructions(
     )
   }
 
-  return getToolsInstructions(allowedTools)
+  // For MCP tools, include all unless in restricted mode
+  const filteredMCPTools = (costMode === 'ask' || readOnlyMode) ? [] : mcpToolNames
+
+  // Combine core tools with MCP tools
+  const allToolNames = [...allowedTools, ...filteredMCPTools] as ToolName[]
+
+  return getToolsInstructions(allToolNames)
 }

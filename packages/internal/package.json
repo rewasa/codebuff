@@ -11,6 +11,12 @@
       "types": "./src/index.ts",
       "default": "./src/index.ts"
     },
+    "./mcp": {
+      "bun": "./src/mcp/index.ts",
+      "import": "./src/mcp/index.ts",
+      "types": "./src/mcp/index.ts",
+      "default": "./src/mcp/index.ts"
+    },
     "./loops": {
       "bun": "./src/loops/index.ts",
       "import": "./src/loops/index.ts",
@@ -26,7 +32,8 @@
   },
   "scripts": {
     "typecheck": "tsc --noEmit -p .",
-    "test": "bun test"
+    "test": "bun test",
+    "postinstall": "bun run scripts/generate-mcp-tools.ts"
   },
   "sideEffects": false,
   "engines": {
@@ -34,6 +41,7 @@
   },
   "dependencies": {
     "@codebuff/common": "workspace:*",
+    "@upstash/context7-mcp": "^1.0.0",
     "drizzle-orm": "*",
     "loops": "^5.0.1"
   },
