@@ -2,8 +2,93 @@
 import { z } from 'zod';
 import { mcpRegistry } from '../registry';
 import { MCPTool } from '../types';
+import { spawn, ChildProcess } from 'child_process';
 
+// Persistent server instance
+let serverProcess: ChildProcess | null = null;
+let serverReady = false;
+let pendingRequests = new Map<number, { resolve: Function, reject: Function }>();
+let requestId = 0;
 
+async function ensureServerRunning(): Promise<void> {
+  if (serverProcess && serverReady) return;
+
+  return new Promise((resolve, reject) => {
+    serverProcess = spawn('uvx', ['duckduckgo-mcp-server'], {
+      stdio: ['pipe', 'pipe', 'pipe'],
+      env: { ...process.env, PATH: `${process.env.HOME}/.local/bin:${process.env.PATH}` },
+    });
+
+    let stdout = '';
+    
+    serverProcess.stdout?.on('data', (data: Buffer) => {
+      stdout += data.toString();
+      
+      // Handle responses
+      const lines = stdout.split('\n').filter(line => line.trim());
+      for (const line of lines) {
+        try {
+          const response = JSON.parse(line);
+          if (response.id === 0 && response.result && !serverReady) {
+            serverReady = true;
+            resolve();
+          } else if (response.id > 0) {
+            const pending = pendingRequests.get(response.id);
+            if (pending) {
+              pendingRequests.delete(response.id);
+              if (response.result) {
+                pending.resolve(response.result);
+              } else if (response.error) {
+                pending.reject(new Error(`MCP Server Error: ${response.error.message}`));
+              }
+            }
+          }
+        } catch (e) {
+          // Ignore parse errors for partial JSON
+        }
+      }
+      
+      // Clear processed lines
+      const lastNewline = stdout.lastIndexOf('\n');
+      if (lastNewline > -1) {
+        stdout = stdout.substring(lastNewline + 1);
+      }
+    });
+
+    serverProcess.stderr?.on('data', (data: Buffer) => {
+      console.error('DuckDuckGo server stderr:', data.toString());
+    });
+
+    serverProcess.on('close', () => {
+      serverProcess = null;
+      serverReady = false;
+      // Reject all pending requests
+      for (const [id, { reject }] of pendingRequests) {
+        reject(new Error('Server process closed'));
+      }
+      pendingRequests.clear();
+    });
+
+    // Initialize server
+    serverProcess.stdin?.write(JSON.stringify({
+      jsonrpc: '2.0',
+      id: 0,
+      method: 'initialize',
+      params: {
+        protocolVersion: '2024-11-05',
+        capabilities: {},
+        clientInfo: { name: 'codebuff', version: '1.0.0' }
+      }
+    }) + '\n');
+
+    // Timeout
+    setTimeout(() => {
+      if (!serverReady) {
+        reject(new Error('Server initialization timeout'));
+      }
+    }, 5000);
+  });
+}
 
 export const duckduckgo_web_searchTool: MCPTool = {
   definition: {
@@ -16,54 +101,37 @@ export const duckduckgo_web_searchTool: MCPTool = {
   }),
   },
   handler: async (args, context) => {
-    // Execute via MCP package
-    const { spawn } = await import('child_process');
+    await ensureServerRunning();
+    
     return new Promise((resolve, reject) => {
-      const childProcess = spawn('npx', ['duckduckgo-mcp-server'], {
-        stdio: ['pipe', 'pipe', 'pipe'],
-        
-      });
-
-      let stdout = '';
-      let stderr = '';
-
-      childProcess.stdout.on('data', (data: Buffer) => {
-        stdout += data.toString();
-      });
-
-      childProcess.stderr.on('data', (data: Buffer) => {
-        stderr += data.toString();
-      });
-
-      childProcess.stdin.write(JSON.stringify({
+      const id = ++requestId;
+      pendingRequests.set(id, { resolve, reject });
+      
+      serverProcess?.stdin?.write(JSON.stringify({
         jsonrpc: '2.0',
-        id: 1,
+        id,
         method: 'tools/call',
         params: {
-          name: 'duckduckgo_web_search',
-          arguments: args
+          name: 'search',
+          arguments: { 
+            query: args.query,
+            max_results: args.count || 10
+          }
         }
       }) + '\n');
-      childProcess.stdin.end();
-
-      childProcess.on('close', (code: number | null) => {
-        if (code === 0) {
-          try {
-            const response = JSON.parse(stdout);
-            resolve(response.result);
-          } catch (e) {
-            reject(new Error(`Failed to parse tool response: ${e}`));
-          }
-        } else {
-          reject(new Error(`Tool execution failed with code ${code}: ${stderr}`));
+      
+      // Timeout individual requests
+      setTimeout(() => {
+        if (pendingRequests.has(id)) {
+          pendingRequests.delete(id);
+          reject(new Error('Request timeout'));
         }
-      });
+      }, 10000);
     });
   },
 };
 
 // Auto-register the tool
 mcpRegistry.register(duckduckgo_web_searchTool);
-
 
 export const duckduckgo_mcp_serverTools = [duckduckgo_web_searchTool];
