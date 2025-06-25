@@ -238,6 +238,60 @@ describe('MCP Integration', () => {
     })
   }, 60000)
 
+  it('should call web_search_exa MCP tool when asked to search with Exa', async () => {
+    // Mock necessary non-LLM functions
+    spyOn(logger, 'debug').mockImplementation(() => {})
+    spyOn(logger, 'error').mockImplementation(() => {})
+    spyOn(logger, 'info').mockImplementation(() => {})
+    spyOn(logger, 'warn').mockImplementation(() => {})
+    spyOn(requestFilesPrompt, 'requestRelevantFiles').mockResolvedValue([])
+    spyOn(checkTerminalCommandModule, 'checkTerminalCommand').mockResolvedValue(null)
+    spyOn(websocketAction, 'requestFiles').mockResolvedValue({})
+
+    // Mock the AI to return a web_search_exa tool call
+    const mockResponse = `I'll search for that using Exa AI.
+
+<web_search_exa>
+<query>latest AI developments</query>
+<numResults>3</numResults>
+</web_search_exa>`
+
+    spyOn(aisdk, 'promptAiSdkStream').mockImplementation(async function* () {
+      yield mockResponse
+    })
+
+    const sessionState = getInitialSessionState(mockFileContext)
+    const action = {
+      type: 'prompt' as const,
+      prompt: 'Search for latest AI developments using Exa',
+      sessionState,
+      fingerprintId: 'test-mcp-exa',
+      costMode: 'normal' as const,
+      promptId: 'test-mcp-exa-id',
+      toolResults: [],
+    }
+
+    const { toolCalls } = await mainPrompt(
+      new MockWebSocket() as unknown as WebSocket,
+      action,
+      {
+        userId: TEST_USER_ID,
+        clientSessionId: 'test-session-mcp-exa',
+        onResponseChunk: () => {},
+        selectedModel: undefined,
+        readOnlyMode: false,
+      }
+    )
+
+    // Verify that the web_search_exa tool was called
+    expect(toolCalls).toHaveLength(1)
+    expect(toolCalls[0].toolName).toBe('web_search_exa')
+    expect(toolCalls[0].args).toEqual({
+      query: 'latest AI developments',
+      numResults: '3', // XML parser returns strings
+    })
+  }, 60000)
+
   it('should handle MCP tool execution errors gracefully', async () => {
     // Mock necessary non-LLM functions
     spyOn(logger, 'debug').mockImplementation(() => {})

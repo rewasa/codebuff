@@ -4,6 +4,7 @@ import { mcpRegistry } from '../registry';
 import { MCPTool } from '../types';
 
 
+
 export const duckduckgo_web_searchTool: MCPTool = {
   definition: {
     name: 'duckduckgo_web_search',
@@ -20,6 +21,7 @@ export const duckduckgo_web_searchTool: MCPTool = {
     return new Promise((resolve, reject) => {
       const process = spawn('npx', ['duckduckgo-mcp-server'], {
         stdio: ['pipe', 'pipe', 'pipe'],
+        
       });
 
       let stdout = '';

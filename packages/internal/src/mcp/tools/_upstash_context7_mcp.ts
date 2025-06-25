@@ -4,6 +4,7 @@ import { mcpRegistry } from '../registry';
 import { MCPTool } from '../types';
 
 
+
 export const resolveLibraryIdTool: MCPTool = {
   definition: {
     name: 'resolve-library-id',
@@ -36,6 +37,7 @@ For ambiguous queries, request clarification before proceeding with a best-guess
     return new Promise((resolve, reject) => {
       const process = spawn('npx', ['@upstash/context7-mcp'], {
         stdio: ['pipe', 'pipe', 'pipe'],
+        
       });
 
       let stdout = '';
@@ -96,6 +98,7 @@ export const getLibraryDocsTool: MCPTool = {
     return new Promise((resolve, reject) => {
       const process = spawn('npx', ['@upstash/context7-mcp'], {
         stdio: ['pipe', 'pipe', 'pipe'],
+        
       });
 
       let stdout = '';

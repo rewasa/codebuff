@@ -15,20 +15,28 @@ async function discoverMCPTools(packageName: string): Promise<MCPTool[]> {
   
   return new Promise((resolve, reject) => {
     console.log(`Spawning process: npx ${packageName}`);
-    const process = spawn('npx', [packageName], {
+    
+    // Set up environment for packages that require API keys during discovery
+    const envVars = { ...process.env };
+    if (packageName.includes('exa')) {
+      envVars.EXA_API_KEY = 'dummy-key-for-discovery';
+    }
+    
+    const childProcess = spawn('npx', [packageName], {
       stdio: ['pipe', 'pipe', 'pipe'],
+      env: envVars,
     });
 
     let stdout = '';
     let stderr = '';
 
-    process.stdout.on('data', (data) => {
+    childProcess.stdout.on('data', (data) => {
       const chunk = data.toString();
       console.log(`[${packageName}] stdout:`, chunk);
       stdout += chunk;
     });
 
-    process.stderr.on('data', (data) => {
+    childProcess.stderr.on('data', (data) => {
       const chunk = data.toString();
       console.log(`[${packageName}] stderr:`, chunk);
       stderr += chunk;
@@ -42,18 +50,18 @@ async function discoverMCPTools(packageName: string): Promise<MCPTool[]> {
     }) + '\n';
     
     console.log(`[${packageName}] Sending message:`, message);
-    process.stdin.write(message);
-    process.stdin.end(); // Signal end of input
+    childProcess.stdin.write(message);
+    childProcess.stdin.end(); // Signal end of input
     
     // Add timeout to prevent hanging
     const timeoutId = setTimeout(() => {
       console.log(`[${packageName}] Timeout reached, killing process`);
-      process.kill('SIGTERM');
+      childProcess.kill('SIGTERM');
       reject(new Error(`Timeout discovering tools for ${packageName}`));
     }, 30000); // 30 second timeout
     
     // Clear timeout when process closes
-    process.on('close', (code) => {
+    childProcess.on('close', (code) => {
       clearTimeout(timeoutId);
       console.log(`[${packageName}] Process closed with code:`, code);
       console.log(`[${packageName}] Final stdout:`, stdout);
@@ -75,7 +83,7 @@ async function discoverMCPTools(packageName: string): Promise<MCPTool[]> {
       }
     });
 
-    process.on('error', (error) => {
+    childProcess.on('error', (error) => {
       console.error(`[${packageName}] Process error:`, error);
       reject(error);
     });
@@ -88,11 +96,13 @@ function toCamelCase(str: string): string {
 
 function generateToolFile(packageName: string, tools: MCPTool[]): string {
   const safeName = packageName.replace(/[@\/\-]/g, '_');
+  const needsAuth = packageName.includes('exa'); // Exa requires API key
 
   return `// Auto-generated from ${packageName}
 import { z } from 'zod';
 import { mcpRegistry } from '../registry';
 import { MCPTool } from '../types';
+${needsAuth ? "import { env } from '../../env';" : ''}
 
 ${tools.map(tool => {
   const camelCaseName = toCamelCase(tool.name);
@@ -108,22 +118,23 @@ export const ${camelCaseName}Tool: MCPTool = {
     // Execute via MCP package
     const { spawn } = await import('child_process');
     return new Promise((resolve, reject) => {
-      const process = spawn('npx', ['${packageName}'], {
+      const childProcess = spawn('npx', ['${packageName}'], {
         stdio: ['pipe', 'pipe', 'pipe'],
+        ${needsAuth ? `env: { ...process.env, EXA_API_KEY: env.EXA_API_KEY },` : ''}
       });
 
       let stdout = '';
       let stderr = '';
 
-      process.stdout.on('data', (data) => {
+      childProcess.stdout.on('data', (data: Buffer) => {
         stdout += data.toString();
       });
 
-      process.stderr.on('data', (data) => {
+      childProcess.stderr.on('data', (data: Buffer) => {
         stderr += data.toString();
       });
 
-      process.stdin.write(JSON.stringify({
+      childProcess.stdin.write(JSON.stringify({
         jsonrpc: '2.0',
         id: 1,
         method: 'tools/call',
@@ -132,9 +143,9 @@ export const ${camelCaseName}Tool: MCPTool = {
           arguments: args
         }
       }) + '\\n');
-      process.stdin.end();
+      childProcess.stdin.end();
 
-      process.on('close', (code) => {
+      childProcess.on('close', (code: number | null) => {
         if (code === 0) {
           try {
             const response = JSON.parse(stdout);
