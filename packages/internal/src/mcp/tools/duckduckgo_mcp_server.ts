@@ -10,9 +10,9 @@ export const duckduckgo_web_searchTool: MCPTool = {
     name: 'duckduckgo_web_search',
     description: `Performs a web search using the DuckDuckGo, ideal for general queries, news, articles, and online content. Use this for broad information gathering, recent events, or when you need diverse web sources. Supports content filtering and region-specific searches. Maximum 20 results per request.`,
     parameters: z.object({
-    query: z.string().describe(`Search query (max 400 chars)`),
-    count: z.number().describe(`Number of results (1-20, default 10)`).optional(),
-    safeSearch: z.string().describe(`SafeSearch level (strict, moderate, off)`).optional()
+    query: z.string().max(400).describe(`Search query (max 400 chars)`),
+    count: z.number().min(1).max(20).describe(`Number of results (1-20, default 10)`).optional(),
+    safeSearch: z.enum(["strict", "moderate", "off"]).describe(`SafeSearch level (strict, moderate, off)`).optional()
   }),
   },
   handler: async (args, context) => {

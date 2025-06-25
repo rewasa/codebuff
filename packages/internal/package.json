@@ -41,6 +41,7 @@
   },
   "dependencies": {
     "@codebuff/common": "workspace:*",
+    "@modelcontextprotocol/sdk": "^1.0.4",
     "@upstash/context7-mcp": "^1.0.0",
     "duckduckgo-mcp-server": "^0.1.2",
     "exa-mcp-server": "^0.3.10",

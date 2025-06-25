@@ -251,9 +251,21 @@ function generateZodSchema(schema: any): string {
   if (schema.type === 'object') {
     const properties = Object.entries(schema.properties || {})
       .map(([key, prop]: [string, any]) => {
-        const zodType = prop.type === 'string' ? 'z.string()' :
-                       prop.type === 'number' ? 'z.number()' :
-                       prop.type === 'boolean' ? 'z.boolean()' : 'z.any()';
+        let zodType = 'z.any()';
+        
+        if (prop.type === 'string') {
+          zodType = 'z.string()';
+          if (prop.minLength) zodType += `.min(${prop.minLength})`;
+          if (prop.maxLength) zodType += `.max(${prop.maxLength})`;
+          if (prop.enum) zodType = `z.enum([${prop.enum.map((v: string) => `"${v}"`).join(', ')}])`;
+        } else if (prop.type === 'number') {
+          zodType = 'z.number()';
+          if (prop.minimum !== undefined) zodType += `.min(${prop.minimum})`;
+          if (prop.maximum !== undefined) zodType += `.max(${prop.maximum})`;
+        } else if (prop.type === 'boolean') {
+          zodType = 'z.boolean()';
+        }
+        
         const description = prop.description ? `.describe(\`${prop.description.replace(/`/g, '\\`').replace(/\$/g, '\\$')}\`)` : '';
         const optional = !schema.required?.includes(key) ? '.optional()' : '';
         return `${key}: ${zodType}${description}${optional}`;
