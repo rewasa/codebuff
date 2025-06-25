@@ -33,7 +33,7 @@
   "scripts": {
     "typecheck": "tsc --noEmit -p .",
     "test": "bun test",
-    "postinstall": "bun run scripts/generate-mcp-tools.ts"
+    "postinstall": "bun run src/mcp/generate-mcp-tools.ts"
   },
   "sideEffects": false,
   "engines": {

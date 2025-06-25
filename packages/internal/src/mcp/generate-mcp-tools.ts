@@ -1,6 +1,6 @@
 #!/usr/bin/env bun
 
-import { spawn } from 'child_process';
+import { spawn, ChildProcess } from 'child_process';
 import { writeFileSync, readFileSync, mkdirSync } from 'fs';
 import { join, dirname } from 'path';
 
@@ -10,19 +10,95 @@ interface MCPTool {
   inputSchema: any;
 }
 
-async function discoverMCPTools(packageName: string): Promise<MCPTool[]> {
-  console.log(`Starting discovery for ${packageName}...`);
+interface MCPPackageInfo {
+  name: string;
+  requiredEnvVars: string[];
+}
+
+async function detectRequiredEnvVars(packageName: string): Promise<string[]> {
+  console.log(`Detecting required environment variables for ${packageName}...`);
+  
+  return new Promise((resolve) => {
+    const childProcess: ChildProcess = spawn('npx', [packageName], {
+      stdio: ['pipe', 'pipe', 'pipe'],
+      env: { NODE_ENV: 'development' }, // Minimal environment to trigger errors
+    });
+
+    let stderr = '';
+
+    childProcess.stderr?.on('data', (data: Buffer) => {
+      stderr += data.toString();
+    });
+
+    // Send a quick message to trigger any env var checks
+    const message = JSON.stringify({
+      jsonrpc: '2.0',
+      id: 1,
+      method: 'tools/list'
+    }) + '\n';
+    
+    childProcess.stdin?.write(message);
+    childProcess.stdin?.end();
+    
+    const timeoutId = setTimeout(() => {
+      childProcess.kill('SIGTERM');
+    }, 10000); // 10 second timeout for detection
+    
+    childProcess.on('close', () => {
+      clearTimeout(timeoutId);
+      
+      // Parse stderr for common environment variable patterns
+      const envVars: string[] = [];
+      
+      // Common patterns for missing API keys
+      const patterns = [
+        /([A-Z_]+_API_KEY)\s+environment\s+variable\s+is\s+required/gi,
+        /EXA_API_KEY/gi,
+        /OPENAI_API_KEY/gi,
+        /ANTHROPIC_API_KEY/gi,
+        /GOOGLE_API_KEY/gi,
+        /GEMINI_API_KEY/gi,
+        /Missing.*?([A-Z_]+_API_KEY)/gi,
+        /Required.*?([A-Z_]+_API_KEY)/gi,
+        /Environment variable.*?([A-Z_]+_API_KEY)/gi,
+      ];
+      
+      for (const pattern of patterns) {
+        const matches = stderr.matchAll(pattern);
+        for (const match of matches) {
+          const envVar = match[1] || match[0];
+          if (envVar && !envVars.includes(envVar)) {
+            envVars.push(envVar);
+          }
+        }
+      }
+      
+      console.log(`[${packageName}] Detected required env vars:`, envVars);
+      resolve(envVars);
+    });
+
+    childProcess.on('error', () => {
+      clearTimeout(timeoutId);
+      resolve([]); // If package fails to run, assume no special env vars needed
+    });
+  });
+}
+
+async function discoverMCPTools(packageInfo: MCPPackageInfo): Promise<MCPTool[]> {
+  console.log(`Starting discovery for ${packageInfo.name}...`);
   
   return new Promise((resolve, reject) => {
-    console.log(`Spawning process: npx ${packageName}`);
+    console.log(`Spawning process: npx ${packageInfo.name}`);
     
-    // Set up environment for packages that require API keys during discovery
+    // Set up environment with detected required variables
     const envVars = { ...process.env };
-    if (packageName.includes('exa')) {
-      envVars.EXA_API_KEY = 'dummy-key-for-discovery';
+    for (const envVar of packageInfo.requiredEnvVars) {
+      if (!envVars[envVar]) {
+        envVars[envVar] = 'dummy-key-for-discovery';
+      }
     }
     
-    const childProcess = spawn('npx', [packageName], {
+    const childProcess: ChildProcess = spawn('npx', [packageInfo.name], {
       stdio: ['pipe', 'pipe', 'pipe'],
       env: envVars,
     });
@@ -30,15 +106,15 @@ async function discoverMCPTools(packageName: string): Promise<MCPTool[]> {
     let stdout = '';
     let stderr = '';
 
-    childProcess.stdout.on('data', (data) => {
+    childProcess.stdout?.on('data', (data: Buffer) => {
       const chunk = data.toString();
-      console.log(`[${packageName}] stdout:`, chunk);
+      console.log(`[${packageInfo.name}] stdout:`, chunk);
       stdout += chunk;
     });
 
-    childProcess.stderr.on('data', (data) => {
+    childProcess.stderr?.on('data', (data: Buffer) => {
       const chunk = data.toString();
-      console.log(`[${packageName}] stderr:`, chunk);
+      console.log(`[${packageInfo.name}] stderr:`, chunk);
       stderr += chunk;
     });
 
@@ -49,42 +125,42 @@ async function discoverMCPTools(packageName: string): Promise<MCPTool[]> {
       method: 'tools/list'
     }) + '\n';
     
-    console.log(`[${packageName}] Sending message:`, message);
-    childProcess.stdin.write(message);
-    childProcess.stdin.end(); // Signal end of input
+    console.log(`[${packageInfo.name}] Sending message:`, message);
+    childProcess.stdin?.write(message);
+    childProcess.stdin?.end(); // Signal end of input
     
     // Add timeout to prevent hanging
     const timeoutId = setTimeout(() => {
-      console.log(`[${packageName}] Timeout reached, killing process`);
+      console.log(`[${packageInfo.name}] Timeout reached, killing process`);
       childProcess.kill('SIGTERM');
-      reject(new Error(`Timeout discovering tools for ${packageName}`));
+      reject(new Error(`Timeout discovering tools for ${packageInfo.name}`));
     }, 30000); // 30 second timeout
     
     // Clear timeout when process closes
-    childProcess.on('close', (code) => {
+    childProcess.on('close', (code: number | null) => {
       clearTimeout(timeoutId);
-      console.log(`[${packageName}] Process closed with code:`, code);
-      console.log(`[${packageName}] Final stdout:`, stdout);
-      console.log(`[${packageName}] Final stderr:`, stderr);
+      console.log(`[${packageInfo.name}] Process closed with code:`, code);
+      console.log(`[${packageInfo.name}] Final stdout:`, stdout);
+      console.log(`[${packageInfo.name}] Final stderr:`, stderr);
       
       if (code === 0 || code === null) { // null means killed by signal
         try {
           // Parse MCP response to extract tools
           const response = JSON.parse(stdout);
-          console.log(`[${packageName}] Parsed response:`, response);
+          console.log(`[${packageInfo.name}] Parsed response:`, response);
           resolve(response.result?.tools || []);
         } catch (e) {
-          console.error(`[${packageName}] Failed to parse response:`, e);
+          console.error(`[${packageInfo.name}] Failed to parse response:`, e);
           reject(new Error(`Failed to parse MCP response: ${e}`));
         }
       } else {
-        console.error(`[${packageName}] Process failed with code ${code}`);
+        console.error(`[${packageInfo.name}] Process failed with code ${code}`);
         reject(new Error(`MCP package exited with code ${code}: ${stderr}`));
       }
     });
 
     childProcess.on('error', (error) => {
-      console.error(`[${packageName}] Process error:`, error);
+      console.error(`[${packageInfo.name}] Process error:`, error);
       reject(error);
     });
   });
@@ -94,15 +170,15 @@ function toCamelCase(str: string): string {
   return str.replace(/-([a-z])/g, (_, letter) => letter.toUpperCase());
 }
 
-function generateToolFile(packageName: string, tools: MCPTool[]): string {
-  const safeName = packageName.replace(/[@\/\-]/g, '_');
-  const needsAuth = packageName.includes('exa'); // Exa requires API key
+function generateToolFile(packageInfo: MCPPackageInfo, tools: MCPTool[]): string {
+  const safeName = packageInfo.name.replace(/[@\/\-]/g, '_');
+  const needsEnvVars = packageInfo.requiredEnvVars.length > 0;
 
-  return `// Auto-generated from ${packageName}
+  return `// Auto-generated from ${packageInfo.name}
 import { z } from 'zod';
 import { mcpRegistry } from '../registry';
 import { MCPTool } from '../types';
-${needsAuth ? "import { env } from '../../env';" : ''}
+${needsEnvVars ? "import { env } from '../../env';" : ''}
 
 ${tools.map(tool => {
   const camelCaseName = toCamelCase(tool.name);
@@ -118,9 +194,9 @@ export const ${camelCaseName}Tool: MCPTool = {
     // Execute via MCP package
     const { spawn } = await import('child_process');
     return new Promise((resolve, reject) => {
-      const childProcess = spawn('npx', ['${packageName}'], {
+      const childProcess = spawn('npx', ['${packageInfo.name}'], {
         stdio: ['pipe', 'pipe', 'pipe'],
-        ${needsAuth ? `env: { ...process.env, EXA_API_KEY: env.EXA_API_KEY },` : ''}
+        ${needsEnvVars ? `env: { ...process.env, ${packageInfo.requiredEnvVars.map(envVar => `${envVar}: env.${envVar}`).join(', ')} },` : ''}
       });
 
       let stdout = '';
@@ -192,7 +268,7 @@ function generateZodSchema(schema: any): string {
 async function main() {
   const packageJson = JSON.parse(readFileSync('package.json', 'utf-8'));
   const mcpPackages = Object.keys(packageJson.dependencies || {})
-    .filter(pkg => pkg.includes('mcp') || pkg.includes('context7'));
+    .filter(pkg => pkg.includes('mcp'));
 
   const toolFiles: string[] = [];
 
@@ -201,12 +277,22 @@ async function main() {
 
   for (const packageName of mcpPackages) {
     try {
-      console.log(`Discovering tools from ${packageName}...`);
-      const tools = await discoverMCPTools(packageName);
+      console.log(`Processing ${packageName}...`);
+      
+      // First detect required environment variables
+      const requiredEnvVars = await detectRequiredEnvVars(packageName);
+      
+      const packageInfo: MCPPackageInfo = {
+        name: packageName,
+        requiredEnvVars
+      };
+      
+      // Then discover tools with proper environment
+      const tools = await discoverMCPTools(packageInfo);
 
       if (tools.length > 0) {
         const safeName = packageName.replace(/[@\/\-]/g, '_');
-        const toolFile = generateToolFile(packageName, tools);
+        const toolFile = generateToolFile(packageInfo, tools);
 
         writeFileSync(`src/mcp/tools/${safeName}.ts`, toolFile);
         toolFiles.push(safeName);

@@ -19,7 +19,7 @@ export const duckduckgo_web_searchTool: MCPTool = {
     // Execute via MCP package
     const { spawn } = await import('child_process');
     return new Promise((resolve, reject) => {
-      const process = spawn('npx', ['duckduckgo-mcp-server'], {
+      const childProcess = spawn('npx', ['duckduckgo-mcp-server'], {
         stdio: ['pipe', 'pipe', 'pipe'],
         
       });
@@ -27,15 +27,15 @@ export const duckduckgo_web_searchTool: MCPTool = {
       let stdout = '';
       let stderr = '';
 
-      process.stdout.on('data', (data) => {
+      childProcess.stdout.on('data', (data: Buffer) => {
         stdout += data.toString();
       });
 
-      process.stderr.on('data', (data) => {
+      childProcess.stderr.on('data', (data: Buffer) => {
         stderr += data.toString();
       });
 
-      process.stdin.write(JSON.stringify({
+      childProcess.stdin.write(JSON.stringify({
         jsonrpc: '2.0',
         id: 1,
         method: 'tools/call',
@@ -44,9 +44,9 @@ export const duckduckgo_web_searchTool: MCPTool = {
           arguments: args
         }
       }) + '\n');
-      process.stdin.end();
+      childProcess.stdin.end();
 
-      process.on('close', (code) => {
+      childProcess.on('close', (code: number | null) => {
         if (code === 0) {
           try {
             const response = JSON.parse(stdout);
