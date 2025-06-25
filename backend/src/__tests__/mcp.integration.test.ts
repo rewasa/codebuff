@@ -182,6 +182,62 @@ describe('MCP Integration', () => {
     })
   }, 60000)
 
+  it('should call duckduckgo_web_search MCP tool when asked to search', async () => {
+    // Mock necessary non-LLM functions
+    spyOn(logger, 'debug').mockImplementation(() => {})
+    spyOn(logger, 'error').mockImplementation(() => {})
+    spyOn(logger, 'info').mockImplementation(() => {})
+    spyOn(logger, 'warn').mockImplementation(() => {})
+    spyOn(requestFilesPrompt, 'requestRelevantFiles').mockResolvedValue([])
+    spyOn(checkTerminalCommandModule, 'checkTerminalCommand').mockResolvedValue(null)
+    spyOn(websocketAction, 'requestFiles').mockResolvedValue({})
+
+    // Mock the AI to return a duckduckgo_web_search tool call
+    const mockResponse = `I'll search for that information using DuckDuckGo.
+
+<duckduckgo_web_search>
+<query>TypeScript best practices</query>
+<count>5</count>
+<safeSearch>moderate</safeSearch>
+</duckduckgo_web_search>`
+
+    spyOn(aisdk, 'promptAiSdkStream').mockImplementation(async function* () {
+      yield mockResponse
+    })
+
+    const sessionState = getInitialSessionState(mockFileContext)
+    const action = {
+      type: 'prompt' as const,
+      prompt: 'Search for TypeScript best practices',
+      sessionState,
+      fingerprintId: 'test-mcp-duckduckgo',
+      costMode: 'normal' as const,
+      promptId: 'test-mcp-ddg-id',
+      toolResults: [],
+    }
+
+    const { toolCalls } = await mainPrompt(
+      new MockWebSocket() as unknown as WebSocket,
+      action,
+      {
+        userId: TEST_USER_ID,
+        clientSessionId: 'test-session-mcp-ddg',
+        onResponseChunk: () => {},
+        selectedModel: undefined,
+        readOnlyMode: false,
+      }
+    )
+
+    // Verify that the duckduckgo_web_search tool was called
+    expect(toolCalls).toHaveLength(1)
+    expect(toolCalls[0].toolName).toBe('duckduckgo_web_search')
+    expect(toolCalls[0].args).toEqual({
+      query: 'TypeScript best practices',
+      count: '5', // XML parser returns strings
+      safeSearch: 'moderate',
+    })
+  }, 60000)
+
   it('should handle MCP tool execution errors gracefully', async () => {
     // Mock necessary non-LLM functions
     spyOn(logger, 'debug').mockImplementation(() => {})

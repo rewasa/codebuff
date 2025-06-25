@@ -42,6 +42,7 @@
   "dependencies": {
     "@codebuff/common": "workspace:*",
     "@upstash/context7-mcp": "^1.0.0",
+    "duckduckgo-mcp-server": "^0.1.2",
     "drizzle-orm": "*",
     "loops": "^5.0.1"
   },
