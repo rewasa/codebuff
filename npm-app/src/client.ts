@@ -18,7 +18,6 @@ import {
 import os from 'os'
 
 import { ApiKeyType, READABLE_NAME } from '@codebuff/common/api-keys/constants'
-import { AGENT_NAME_TO_TYPES, UNIQUE_AGENT_NAMES } from '@codebuff/common/constants/agents'
 import {
   ASKED_CONFIG,
   CostMode,
@@ -29,6 +28,10 @@ import {
   SHOULD_ASK_CONFIG,
   UserState,
 } from '@codebuff/common/constants'
+import {
+  AGENT_NAME_TO_TYPES,
+  UNIQUE_AGENT_NAMES,
+} from '@codebuff/common/constants/agents'
 import { AnalyticsEvent } from '@codebuff/common/constants/analytics-events'
 import { codebuffConfigFile as CONFIG_FILE_NAME } from '@codebuff/common/json-config/constants'
 import {
@@ -75,6 +78,7 @@ import {
   getWorkingDirectory,
   startNewChat,
 } from './project-files'
+import { rageDetectors } from './rage-detectors'
 import { logAndHandleStartup } from './startup-process-handler'
 import { handleToolCall } from './tool-handlers'
 import { GitCommand, MakeNullable } from './types'
@@ -146,6 +150,7 @@ export class Client {
   private costMode: CostMode
   private responseComplete: boolean = false
   private userInputId: string | undefined
+  private isReceivingResponse: boolean = false
 
   public usageData: UsageData = {
     usage: 0,
@@ -956,7 +961,7 @@ export class Client {
 
     // Parse agent references from the prompt
     const { cleanPrompt, preferredAgents } = this.parseAgentReferences(prompt)
-    
+
     const urls = parseUrlsFromContent(cleanPrompt)
     const scrapedBlocks = await getScrapedContentBlocks(urls)
     const scrapedContent =
@@ -1000,37 +1005,46 @@ export class Client {
     }
   }
 
-  private parseAgentReferences(prompt: string): { cleanPrompt: string; preferredAgents: string[] } {
+  private parseAgentReferences(prompt: string): {
+    cleanPrompt: string
+    preferredAgents: string[]
+  } {
     let cleanPrompt = prompt
     const preferredAgents: string[] = []
-    
+
     // Create a regex pattern that matches any of the known agent names
-    const agentNamePattern = UNIQUE_AGENT_NAMES.map(name => 
-      name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') // Escape special regex chars
+    const agentNamePattern = UNIQUE_AGENT_NAMES.map(
+      (name) => name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') // Escape special regex chars
     ).join('|')
-    
-    const agentRegex = new RegExp(`@(${agentNamePattern})(?=\\s|$|[,.!?])`, 'gi')
+
+    const agentRegex = new RegExp(
+      `@(${agentNamePattern})(?=\\s|$|[,.!?])`,
+      'gi'
+    )
     const matches = prompt.match(agentRegex) || []
-    
+
     for (const match of matches) {
       const agentName = match.substring(1).trim() // Remove @ and trim
       // Find the exact agent name (case-insensitive)
-      const exactAgentName = UNIQUE_AGENT_NAMES.find(name => 
-        name.toLowerCase() === agentName.toLowerCase()
+      const exactAgentName = UNIQUE_AGENT_NAMES.find(
+        (name) => name.toLowerCase() === agentName.toLowerCase()
       )
-      
+
       if (exactAgentName) {
         const agentTypes = AGENT_NAME_TO_TYPES[exactAgentName]
         if (agentTypes && agentTypes.length > 0) {
           // Use the first matching agent type
           preferredAgents.push(agentTypes[0])
           // Remove ALL occurrences of this @ reference from the prompt using global replace
-          const matchRegex = new RegExp(match.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'g')
+          const matchRegex = new RegExp(
+            match.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'),
+            'g'
+          )
           cleanPrompt = cleanPrompt.replace(matchRegex, '').trim()
         }
       }
     }
-    
+
     return { cleanPrompt, preferredAgents }
   }
 
@@ -1148,6 +1162,13 @@ export class Client {
       const { chunk } = a
 
       rawChunkBuffer.push(chunk)
+
+      // Reset the response hang detector on each chunk received
+      rageDetectors.responseHangDetector.stop()
+      rageDetectors.responseHangDetector.start({
+        promptId: userInputId,
+        isReceivingResponse: () => this.isReceivingResponse,
+      })
 
       const trimmed = chunk.trim()
       for (const tag of ONE_TIME_TAGS) {
@@ -1306,6 +1327,16 @@ Go to https://www.codebuff.com/config for more information.`) +
 
     // Reset flags at the start of each response
     this.responseComplete = false
+    this.isReceivingResponse = true
+
+    // Start the response hang detector
+    rageDetectors.responseHangDetector.start({
+      promptId: userInputId,
+      isReceivingResponse: () => this.isReceivingResponse,
+    })
+
+    // Stop the response hang detector when user stops the response
+    rageDetectors.responseHangDetector.stop()
 
     return {
       responsePromise,
@@ -1331,6 +1362,9 @@ Go to https://www.codebuff.com/config for more information.`) +
         }),
       })
 
+      // Stop the response hang detector when response is complete
+      this.isReceivingResponse = false
+      rageDetectors.responseHangDetector.stop()
       const data = await response.json()
 
       // Use zod schema to validate response

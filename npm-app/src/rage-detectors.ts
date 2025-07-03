@@ -15,6 +15,9 @@ export interface RageDetectors {
   webSocketHangDetector: ReturnType<
     typeof createTimeoutDetector<WebSocketHangDetectorContext>
   >
+  responseHangDetector: ReturnType<
+    typeof createTimeoutDetector<ResponseHangDetectorContext>
+  >
   startupTimeDetector: ReturnType<typeof createTimeBetweenDetector>
   exitTimeDetector: ReturnType<typeof createTimeBetweenDetector>
 }
@@ -24,6 +27,12 @@ interface WebSocketHangDetectorContext {
   connectionIssue?: string
   url?: string
   getWebsocketState: () => ReadyState
+}
+
+// Define the specific context type for Response hang detector
+interface ResponseHangDetectorContext {
+  promptId?: string
+  isReceivingResponse: () => boolean
 }
 
 export function createRageDetectors(): RageDetectors {
@@ -91,6 +100,19 @@ export function createRageDetectors(): RageDetectors {
         // Only fire if the websocket is still not connected.
         // This prevents firing if the connection is restored right before the timeout.
         return context.getWebsocketState() !== WebSocket.OPEN
+      },
+    }),
+
+    responseHangDetector: createTimeoutDetector<ResponseHangDetectorContext>({
+      reason: 'response_hang',
+      timeoutMs: 60_000,
+      shouldFire: async (context) => {
+        if (!context || !context.isReceivingResponse) {
+          return false
+        }
+
+        // Only fire if we're still expecting a response
+        return context.isReceivingResponse()
       },
     }),
 

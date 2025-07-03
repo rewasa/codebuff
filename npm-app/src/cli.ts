@@ -844,6 +844,9 @@ export class CLI {
       'WebSocket connection error'
     )
 
+    // Stop response hang detector on error
+    rageDetectors.responseHangDetector.stop()
+
     // Start hang detection for persistent connection issues
     rageDetectors.webSocketHangDetector.start({
       connectionIssue: 'websocket_persistent_failure',
