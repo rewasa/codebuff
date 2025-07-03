@@ -846,19 +846,9 @@ export class CLI {
 
     // Stop response hang detector on error
     rageDetectors.responseHangDetector.stop()
-
-    // Start hang detection for persistent connection issues
-    rageDetectors.webSocketHangDetector.start({
-      connectionIssue: 'websocket_persistent_failure',
-      url: websocketUrl,
-      getWebsocketState: () => Client.getInstance().webSocket.state,
-    })
   }
 
   private onWebSocketReconnect() {
-    // Stop hang detection on successful reconnection
-    rageDetectors.webSocketHangDetector.stop()
-
     console.log('\n' + green('Reconnected!'))
     this.freshPrompt()
   }
