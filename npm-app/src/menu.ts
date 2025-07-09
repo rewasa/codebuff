@@ -274,6 +274,62 @@ const getRandomColors = () => {
   return colors
 }
 
+// Helper function to generate project setup status display
+function getProjectSetupStatus(): string {
+  const currentDirectoryLine = `${green('✅ Current directory:')} ${bold(blueBright(getProjectRoot()))}`
+  const hasGitRepo = fs.existsSync(path.join(getProjectRoot(), '.git'))
+  const hasGitIgnore = fs.existsSync(
+    path.join(getProjectRoot(), '.gitignore')
+  )
+  const hasKnowledgeMd = fs.existsSync(
+    path.join(getProjectRoot(), 'knowledge.md')
+  )
+  const hasCodebuffJson = fs.existsSync(
+    path.join(getProjectRoot(), codebuffConfigFile)
+  )
+  const gitignoreNote =
+    ' (Codebuff never reads files in your .gitignore/.codebuffignore)'
+
+  // Condition 1: Git repo found, all files present
+  if (hasGitRepo && hasGitIgnore && hasKnowledgeMd && hasCodebuffJson) {
+    return `${currentDirectoryLine}\n${green('✅ Git repo: detected')}
+${green('✅ .gitignore: detected')}${gitignoreNote}
+${green('✅ knowledge.md: detected')}
+${green(`✅ ${codebuffConfigFile}: detected`)}`
+  }
+
+  // Condition 2: Git repo not found
+  if (!hasGitRepo) {
+    return `${currentDirectoryLine}\n${yellow('❌ Git repo: not found')}${' - navigate to a working directory!'}
+${hasGitIgnore ? green('✅ .gitignore: detected') : yellow('❌ .gitignore: missing')}${gitignoreNote}
+${hasKnowledgeMd ? green('✅ knowledge.md: detected') : yellow('❌ knowledge.md: missing')}${' — run "init" to fix'}
+${hasCodebuffJson ? green(`✅ ${codebuffConfigFile}: detected`) : yellow(`❌ ${codebuffConfigFile}: missing`)}${' — run "init" to fix'}`
+  }
+
+  // Condition 3: Missing .gitignore
+  if (!hasGitIgnore) {
+    return `${currentDirectoryLine}\n${green('✅ Git repo: detected')}
+${yellow('❌ .gitignore: missing - type "generate a reasonable .gitignore"')}${gitignoreNote}
+${hasKnowledgeMd ? green('✅ knowledge.md: detected') : yellow('❌ knowledge.md: missing')}
+${hasCodebuffJson ? green(`✅ ${codebuffConfigFile}: detected`) : yellow(`❌ ${codebuffConfigFile}: missing`)}`
+  }
+  // Condition 4: Missing knowledge files
+  return `${currentDirectoryLine}\n${green('✅ Git repo: detected')}
+${green('✅ .gitignore: detected')}${gitignoreNote}
+${
+  !hasKnowledgeMd && !hasCodebuffJson
+    ? yellow(`❌ knowledge.md & ${codebuffConfigFile}: missing - type "init"`)
+    : !hasKnowledgeMd
+      ? yellow('❌ knowledge.md: missing - type "init"')
+      : !hasCodebuffJson
+        ? yellow(`❌ ${codebuffConfigFile}: missing - type "init"`)
+        : green(`✅ knowledge.md & ${codebuffConfigFile}: detected`)
+}
+${hasKnowledgeMd && !hasCodebuffJson ? `\n${yellow(`${codebuffConfigFile} runs deployment scripts for you to test your code and runs configured checks for you by running your dev server.`)}` : ''}
+${!hasKnowledgeMd && hasCodebuffJson ? `\n${yellow('knowledge.md helps Codebuff understand your project structure and codebase better for better results.')}` : ''}
+${!hasKnowledgeMd && !hasCodebuffJson ? `\n${yellow('knowledge.md helps Codebuff understand your project structure and codebase better for better results.')}\n${yellow(`${codebuffConfigFile} runs deployment scripts for you to test your code and runs configured checks for you by running your dev server.`)}` : ''}`
+}
+
 export function displayMenu() {
   const terminalWidth = process.stdout.columns || 80
   const dividerLine = '─'.repeat(terminalWidth)
@@ -306,62 +362,7 @@ ${colorizeRandom(' ╚═════╝')}${colorizeRandom(' ╚═════
 
   console.log(`\n${bold(underline('PROJECT SETUP'))}`)
 
-  console.log(
-    (() => {
-      const currentDirectoryLine = `${green('✅ Current directory:')} ${bold(blueBright(getProjectRoot()))}`
-      const hasGitRepo = fs.existsSync(path.join(getProjectRoot(), '.git'))
-      const hasGitIgnore = fs.existsSync(
-        path.join(getProjectRoot(), '.gitignore')
-      )
-      const hasKnowledgeMd = fs.existsSync(
-        path.join(getProjectRoot(), 'knowledge.md')
-      )
-      const hasCodebuffJson = fs.existsSync(
-        path.join(getProjectRoot(), codebuffConfigFile)
-      )
-      const gitignoreNote =
-        ' (Codebuff never reads files in your .gitignore/.codebuffignore)'
-
-      // Condition 1: Git repo found, all files present
-      if (hasGitRepo && hasGitIgnore && hasKnowledgeMd && hasCodebuffJson) {
-        return `${currentDirectoryLine}\n${green('✅ Git repo: detected')}
-${green('✅ .gitignore: detected')}${gitignoreNote}
-${green('✅ knowledge.md: detected')}
-${green(`✅ ${codebuffConfigFile}: detected`)}`
-      }
-
-      // Condition 2: Git repo not found
-      if (!hasGitRepo) {
-        return `${currentDirectoryLine}\n${yellow('❌ Git repo: not found')}${' - navigate to a working directory!'}
-${hasGitIgnore ? green('✅ .gitignore: detected') : yellow('❌ .gitignore: missing')}${gitignoreNote}
-${hasKnowledgeMd ? green('✅ knowledge.md: detected') : yellow('❌ knowledge.md: missing')}${' — run "init" to fix'}
-${hasCodebuffJson ? green(`✅ ${codebuffConfigFile}: detected`) : yellow(`❌ ${codebuffConfigFile}: missing`)}${' — run "init" to fix'}`
-      }
-
-      // Condition 3: Missing .gitignore
-      if (!hasGitIgnore) {
-        return `${currentDirectoryLine}\n${green('✅ Git repo: detected')}
-${yellow('❌ .gitignore: missing - type "generate a reasonable .gitignore"')}${gitignoreNote}
-${hasKnowledgeMd ? green('✅ knowledge.md: detected') : yellow('❌ knowledge.md: missing')}
-${hasCodebuffJson ? green(`✅ ${codebuffConfigFile}: detected`) : yellow(`❌ ${codebuffConfigFile}: missing`)}`
-      }
-      // Condition 4: Missing knowledge files
-      return `${currentDirectoryLine}\n${green('✅ Git repo: detected')}
-${green('✅ .gitignore: detected')}${gitignoreNote}
-${
-  !hasKnowledgeMd && !hasCodebuffJson
-    ? yellow(`❌ knowledge.md & ${codebuffConfigFile}: missing - type "init"`)
-    : !hasKnowledgeMd
-      ? yellow('❌ knowledge.md: missing - type "init"')
-      : !hasCodebuffJson
-        ? yellow(`❌ ${codebuffConfigFile}: missing - type "init"`)
-        : green(`✅ knowledge.md & ${codebuffConfigFile}: detected`)
-}
-${hasKnowledgeMd && !hasCodebuffJson ? `\n${yellow(`${codebuffConfigFile} runs deployment scripts for you to test your code and runs configured checks for you by running your dev server.`)}` : ''}
-${!hasKnowledgeMd && hasCodebuffJson ? `\n${yellow('knowledge.md helps Codebuff understand your project structure and codebase better for better results.')}` : ''}
-${!hasKnowledgeMd && !hasCodebuffJson ? `\n${yellow('knowledge.md helps Codebuff understand your project structure and codebase better for better results.')}\n${yellow(`${codebuffConfigFile} runs deployment scripts for you to test your code and runs configured checks for you by running your dev server.`)}` : ''}`
-    })()
-  )
+  console.log(getProjectSetupStatus())
 
   // COMMUNITY & FEEDBACK SECTION
   console.log(`\n${bold(underline('COMMUNITY & FEEDBACK'))}`)

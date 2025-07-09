@@ -3,6 +3,15 @@ import { env } from '@codebuff/internal'
 
 import { logger } from '../util/logger'
 
+// Helper function to convert Headers to plain object
+function convertHeadersToObject(headers: Headers): Record<string, string> {
+  const headerObj: Record<string, string> = {}
+  headers.forEach((value, key) => {
+    headerObj[key] = value
+  })
+  return headerObj
+}
+
 const LINKUP_API_BASE_URL = 'https://api.linkup.so/v1'
 const FETCH_TIMEOUT_MS = 30_000
 
@@ -85,13 +94,7 @@ export async function searchWeb(
           fetchDuration,
           totalDuration: Date.now() - apiStartTime,
           headers: response.headers
-            ? (() => {
-                const headerObj: Record<string, string> = {}
-                response.headers.forEach((value, key) => {
-                  headerObj[key] = value
-                })
-                return headerObj
-              })()
+            ? convertHeadersToObject(response.headers)
             : 'No headers',
         },
         `Request failed with ${response.status}: ${response.statusText}`
