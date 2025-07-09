@@ -40,10 +40,11 @@ export class Spinner {
     let i = 0
     // Hide cursor while spinner is active
     process.stdout.write('\u001B[?25l')
-    this.loadingInterval = setInterval(() => {
+    const updateSpinner = () => {
       this.rewriteLine(green(`${chars[i]} ${this.text}`))
       i = (i + 1) % chars.length
-    }, 100)
+    }
+    this.loadingInterval = setInterval(updateSpinner, 100)
   }
 
   stop() {

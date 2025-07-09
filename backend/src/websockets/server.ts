@@ -80,72 +80,93 @@ async function processMessage(
   }
 }
 
+function handleWebSocketServerError(err: Error) {
+  logger.error({ error: err }, 'Error on websocket server.')
+}
+
+function createCleanupDeadConnections(wss: WebSocketServer) {
+  return () => {
+    const now = Date.now()
+    try {
+      for (const ws of wss.clients) {
+      try {
+        const client = SWITCHBOARD.getClient(ws)
+        if (!client) {
+          logger.warn(
+            'Client not found in switchboard, terminating connection'
+          )
+          ws.terminate()
+          continue
+        }
+
+        const lastSeen = client.lastSeen
+        if (lastSeen < now - CONNECTION_TIMEOUT_MS) {
+          ws.terminate()
+        }
+      } catch (err) {
+        // logger.error(
+        //   { error: err },
+        //   'Error checking individual connection in deadConnectionCleaner'
+        // )
+      }
+    }
+    } catch (error) {
+      logger.error({ error }, 'Error in deadConnectionCleaner outer loop')
+    }
+  }
+}
+
+function handleWebSocketConnection(ws: WebSocket) {
+  // todo: should likely kill connections that haven't sent any ping for a long time
+  // logger.info('WS client connected.')
+  SWITCHBOARD.connect(ws)
+  const clientSessionId =
+    SWITCHBOARD.clients.get(ws)?.sessionId ?? 'mc-client-unknown'
+  
+  const handleMessage = async (data: RawData) => {
+    const result = await processMessage(ws, clientSessionId, data)
+    // mqp: check ws.readyState before sending?
+    ws.send(JSON.stringify(result))
+  }
+
+  const handleClose = (code: number, reason: Buffer) => {
+    // logger.debug(
+    //   { code, reason: reason.toString() },
+    //   'WS client disconnected.'
+    // )
+    SWITCHBOARD.disconnect(ws)
+  }
+
+  const handleError = (err: Error) => {
+    logger.error({ error: err }, 'Error on websocket connection.')
+  }
+
+  ws.on('message', handleMessage)
+  ws.on('close', handleClose)
+  ws.on('error', handleError)
+}
+
 export function listen(server: HttpServer, path: string) {
   logger.info(`Listening on websocket path: ${path}`)
   const wss = new WebSocketServer({ server, path })
   let deadConnectionCleaner: NodeJS.Timeout | undefined
-  wss.on('listening', () => {
+  
+  const handleListening = () => {
     logger.info(`Web socket server listening on ${path}.`)
-    deadConnectionCleaner = setInterval(function ping() {
-      const now = Date.now()
-      try {
-        for (const ws of wss.clients) {
-          try {
-            const client = SWITCHBOARD.getClient(ws)
-            if (!client) {
-              logger.warn(
-                'Client not found in switchboard, terminating connection'
-              )
-              ws.terminate()
-              continue
-            }
-
-            const lastSeen = client.lastSeen
-            if (lastSeen < now - CONNECTION_TIMEOUT_MS) {
-              ws.terminate()
-            }
-          } catch (err) {
-            // logger.error(
-            //   { error: err },
-            //   'Error checking individual connection in deadConnectionCleaner'
-            // )
-          }
-        }
-      } catch (error) {
-        logger.error({ error }, 'Error in deadConnectionCleaner outer loop')
-      }
-    }, CONNECTION_TIMEOUT_MS)
-  })
-  wss.on('error', (err: Error) => {
-    logger.error({ error: err }, 'Error on websocket server.')
-  })
-  wss.on('connection', (ws: WebSocket) => {
-    // todo: should likely kill connections that haven't sent any ping for a long time
-    // logger.info('WS client connected.')
-    SWITCHBOARD.connect(ws)
-    const clientSessionId =
-      SWITCHBOARD.clients.get(ws)?.sessionId ?? 'mc-client-unknown'
-    ws.on('message', async (data: RawData) => {
-      const result = await processMessage(ws, clientSessionId, data)
-      // mqp: check ws.readyState before sending?
-      ws.send(JSON.stringify(result))
-    })
-    ws.on('close', (code: number, reason: Buffer) => {
-      // logger.debug(
-      //   { code, reason: reason.toString() },
-      //   'WS client disconnected.'
-      // )
-      SWITCHBOARD.disconnect(ws)
-    })
-    ws.on('error', (err: Error) => {
-      logger.error({ error: err }, 'Error on websocket connection.')
-    })
-  })
-  wss.on('close', function close() {
+    deadConnectionCleaner = setInterval(createCleanupDeadConnections(wss), CONNECTION_TIMEOUT_MS)
+  }
+  
+  const handleClose = () => {
     if (deadConnectionCleaner) {
       clearInterval(deadConnectionCleaner)
     }
-  })
+  }
+  
+  wss.on('listening', handleListening)
+  wss.on('error', handleWebSocketServerError)
+  wss.on('connection', handleWebSocketConnection)
+  wss.on('close', handleClose)
+  
   return wss
 }
 

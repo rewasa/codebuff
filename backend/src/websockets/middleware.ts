@@ -88,7 +88,7 @@ export class WebSocketMiddleware {
     ) => void,
     options: { silent?: boolean } = {}
   ) {
-    return async (
+    const wrappedAction = async (
       action: Extract<ClientAction, { type: T }>,
       clientSessionId: string,
       ws: WebSocket
@@ -120,21 +120,33 @@ export class WebSocketMiddleware {
         }
       )
     }
+    
+    return wrappedAction
   }
 }
 
 export const protec = new WebSocketMiddleware()
 
-protec.use(async (action, clientSessionId, ws, userInfo) =>
-  checkAuth({
+// Named middleware functions for better debugging
+async function authenticationMiddleware(
+  action: ClientAction,
+  clientSessionId: string,
+  ws: WebSocket,
+  userInfo: UserInfo | undefined
+) {
+  return checkAuth({
     fingerprintId: 'fingerprintId' in action ? action.fingerprintId : undefined,
     authToken: 'authToken' in action ? action.authToken : undefined,
     clientSessionId,
   })
-)
+}
 
-// Organization repository coverage detection middleware
-protec.use(async (action, clientSessionId, ws, userInfo) => {
+async function organizationRepositoryCoverageMiddleware(
+  action: ClientAction,
+  clientSessionId: string,
+  ws: WebSocket,
+  userInfo: UserInfo | undefined
+) {
   const userId = userInfo?.id
 
   // Only process actions that have repoUrl as a valid string
@@ -223,7 +235,7 @@ protec.use(async (action, clientSessionId, ws, userInfo) => {
           'Organization has insufficient credits, gating request.'
         )
         return {
-          type: 'action-error',
+          type: 'action-error' as const,
           error: 'Insufficient organization credits',
           message,
           remainingBalance: orgBalance.netBalance, // Send org balance here
@@ -264,9 +276,14 @@ protec.use(async (action, clientSessionId, ws, userInfo) => {
   }
 
   return undefined
-})
+}
 
-protec.use(async (action, clientSessionId, ws, userInfo) => {
+async function creditBalanceMiddleware(
+  action: ClientAction,
+  clientSessionId: string,
+  ws: WebSocket,
+  userInfo: UserInfo | undefined
+) {
   const userId = userInfo?.id
   const fingerprintId =
     'fingerprintId' in action ? action.fingerprintId : 'unknown-fingerprint'
@@ -281,7 +298,7 @@ protec.use(async (action, clientSessionId, ws, userInfo) => {
       'Missing user or fingerprint ID'
     )
     return {
-      type: 'action-error',
+      type: 'action-error' as const,
       error: 'Missing user or fingerprint ID',
       message: 'Please log in to continue.',
     }
@@ -339,7 +356,7 @@ protec.use(async (action, clientSessionId, ws, userInfo) => {
         : `You do not have enough credits for this action. Please add credits or wait for your next cycle to begin.`
 
     return {
-      type: 'action-error',
+      type: 'action-error' as const,
       error: 'Insufficient credits',
       message,
       remainingBalance: balance.netBalance,
@@ -357,4 +374,8 @@ protec.use(async (action, clientSessionId, ws, userInfo) => {
   })
 
   return undefined
-})
+}
+
+protec.use(authenticationMiddleware)
+protec.use(organizationRepositoryCoverageMiddleware)
+protec.use(creditBalanceMiddleware)

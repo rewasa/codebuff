@@ -126,47 +126,14 @@ export class CLI {
     })
 
     this.readyPromise = Promise.all([
-      readyPromise.then(([fileContext]) => {
-        Client.getInstance().initSessionState(fileContext)
-        return Client.getInstance().warmContextCache()
-      }),
+      readyPromise.then(this.handleReadyPromiseResolution.bind(this)),
       Client.getInstance().connect(),
     ])
 
     this.setPrompt()
 
-    process.on('unhandledRejection', (reason, promise) => {
-      rageDetectors.exitAfterErrorDetector.start()
-
-      console.error('\nUnhandled Rejection at:', promise, 'reason:', reason)
-      logger.error(
-        {
-          errorMessage:
-            reason instanceof Error ? reason.message : String(reason),
-          errorStack: reason instanceof Error ? reason.stack : undefined,
-        },
-        'Unhandled Rejection'
-      )
-      this.freshPrompt()
-    })
-
-    process.on('uncaughtException', (err, origin) => {
-      rageDetectors.exitAfterErrorDetector.start()
-
-      console.error(
-        `\nCaught exception: ${err}\n` + `Exception origin: ${origin}`
-      )
-      console.error(err.stack)
-      logger.error(
-        {
-          errorMessage: err.message,
-          errorStack: err.stack,
-          origin,
-        },
-        'Uncaught Exception'
-      )
-      this.freshPrompt()
-    })
+    process.on('unhandledRejection', this.handleUnhandledRejection.bind(this))
+    process.on('uncaughtException', this.handleUncaughtException.bind(this))
   }
 
   public static initialize(
@@ -186,39 +153,82 @@ export class CLI {
     return CLI.instance
   }
 
-  private setupSignalHandlers() {
-    process.on('exit', () => {
-      Spinner.get().restoreCursor()
-      // Kill the persistent child process first
-      if (persistentProcess && persistentProcess.childProcess) {
-        persistentProcess.childProcess.kill()
-      }
-      sendKillSignalToAllBackgroundProcesses()
-      const isHomeDir = getProjectRoot() === os.homedir()
-      if (!isHomeDir) {
-        console.log(green('Codebuff out!'))
-      }
-      if (process.env.NEXT_PUBLIC_CB_ENVIRONMENT === 'dev') {
-        logger.info(
-          '[dev] active handles on close',
-          (process as any)._getActiveHandles()
-        )
-      }
-    })
-    for (const signal of ['SIGTERM', 'SIGHUP']) {
-      process.on(signal, async () => {
-        process.removeAllListeners('unhandledRejection')
-        process.removeAllListeners('uncaughtException')
-        Spinner.get().restoreCursor()
-        await killAllBackgroundProcesses()
+  private handleReadyPromiseResolution([fileContext, _]: [ProjectFileContext, void]) {
+    Client.getInstance().initSessionState(fileContext)
+    return Client.getInstance().warmContextCache()
+  }
 
-        Client.getInstance().close()
+  private handleUnhandledRejection(reason: any, promise: Promise<any>) {
+    rageDetectors.exitAfterErrorDetector.start()
 
-        await flushAnalytics()
-        process.exit(0)
-      })
+    console.error('\nUnhandled Rejection at:', promise, 'reason:', reason)
+    logger.error(
+      {
+        errorMessage:
+          reason instanceof Error ? reason.message : String(reason),
+        errorStack: reason instanceof Error ? reason.stack : undefined,
+      },
+      'Unhandled Rejection'
+    )
+    this.freshPrompt()
+  }
+
+  private handleUncaughtException(err: Error, origin: string) {
+    rageDetectors.exitAfterErrorDetector.start()
+
+    console.error(
+      `\nCaught exception: ${err}\n` + `Exception origin: ${origin}`
+    )
+    console.error(err.stack)
+    logger.error(
+      {
+        errorMessage: err.message,
+        errorStack: err.stack,
+        origin,
+      },
+      'Uncaught Exception'
+    )
+    this.freshPrompt()
+  }
+
+  private handleProcessExit() {
+    Spinner.get().restoreCursor()
+    // Kill the persistent child process first
+    if (persistentProcess && persistentProcess.childProcess) {
+      persistentProcess.childProcess.kill()
     }
-    process.on('SIGTSTP', async () => await this.handleExit())
+    sendKillSignalToAllBackgroundProcesses()
+    const isHomeDir = getProjectRoot() === os.homedir()
+    if (!isHomeDir) {
+      console.log(green('Codebuff out!'))
+    }
+    if (process.env.NEXT_PUBLIC_CB_ENVIRONMENT === 'dev') {
+      logger.info(
+        '[dev] active handles on close',
+        (process as any)._getActiveHandles()
+      )
+    }
+  }
+
+  private async handleProcessSignal() {
+    process.removeAllListeners('unhandledRejection')
+    process.removeAllListeners('uncaughtException')
+    Spinner.get().restoreCursor()
+    await killAllBackgroundProcesses()
+
+    Client.getInstance().close()
+
+    await flushAnalytics()
+    process.exit(0)
+  }
+
+  private setupSignalHandlers() {
+    process.on('exit', this.handleProcessExit.bind(this))
+    
+    for (const signal of ['SIGTERM', 'SIGHUP']) {
+      process.on(signal, this.handleProcessSignal.bind(this))
+    }
+    process.on('SIGTSTP', this.handleExit.bind(this))
     // Doesn't catch SIGKILL (e.g. `kill -9`)
   }
 
@@ -285,11 +295,11 @@ export class CLI {
     const history = this._loadHistory()
     ;(this.rl as any).history.push(...history)
 
-    this.rl.on('line', (line) => this.handleLine(line))
-    this.rl.on('SIGINT', async () => await this.handleSigint())
-    this.rl.on('close', async () => await this.handleExit())
+    this.rl.on('line', this.handleReadlineLineEvent.bind(this))
+    this.rl.on('SIGINT', this.handleReadlineSigintEvent.bind(this))
+    this.rl.on('close', this.handleReadlineCloseEvent.bind(this))
 
-    process.stdin.on('keypress', (str, key) => this.handleKeyPress(str, key))
+    process.stdin.on('keypress', this.handleProcessKeypress.bind(this))
   }
 
   private inputCompleter(line: string): [string[], string] {
@@ -924,6 +934,22 @@ export class CLI {
       }
     }
     this.detectPasting()
+  }
+
+  private handleReadlineLineEvent(line: string) {
+    this.handleLine(line)
+  }
+
+  private handleReadlineSigintEvent() {
+    this.handleSigint()
+  }
+
+  private handleReadlineCloseEvent() {
+    this.handleExit()
+  }
+
+  private handleProcessKeypress(str: string, key: any) {
+    this.handleKeyPress(str, key)
   }
 
   private async handleSigint() {

@@ -545,7 +545,7 @@ export class Client {
       })
 
       const initialTime = Date.now()
-      const pollInterval = setInterval(async () => {
+      const handleLoginPolling = async () => {
         if (Date.now() - initialTime > 5 * 60 * 1000 && shouldRequestLogin) {
           shouldRequestLogin = false
           console.log(
@@ -643,7 +643,8 @@ export class Client {
             'Error checking login status'
           )
         }
-      }, 5000)
+      }
+      const pollInterval = setInterval(handleLoginPolling, 5000)
     } catch (error) {
       console.error('Error during login:', error)
       logger.error(
