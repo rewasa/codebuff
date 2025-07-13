@@ -6,7 +6,6 @@ import {
 import { AgentTemplateType } from '@codebuff/common/types/session-state'
 import { normalizeAgentNames } from '@codebuff/common/util/agent-name-normalization'
 import { ProjectFileContext } from '@codebuff/common/util/file'
-import * as fs from 'fs'
 import * as path from 'path'
 import { z } from 'zod'
 import { jsonSchemaToZod } from 'json-schema-to-zod'
@@ -35,18 +34,18 @@ export class DynamicAgentService {
   private isLoaded = false
 
   /**
-   * Load and validate dynamic agent templates from .agents/templates directory
+   * Load and validate dynamic agent templates from client-provided agentTemplates
    */
   async loadAgents(
     fileContext: ProjectFileContext
   ): Promise<DynamicAgentLoadResult> {
-    const templatesDir = path.join(fileContext.projectRoot, '.agents/templates')
-
     this.templates = {}
     this.validationErrors = []
 
-    if (!fs.existsSync(templatesDir)) {
-      logger.debug('No .agents/templates directory found')
+    const { agentTemplates } = fileContext
+
+    if (!agentTemplates || Object.keys(agentTemplates).length === 0) {
+      logger.debug('No agent templates provided in fileContext')
       this.isLoaded = true
       return {
         templates: this.templates,
@@ -55,32 +54,36 @@ export class DynamicAgentService {
     }
 
     try {
-      const files = fs.readdirSync(templatesDir)
-      const jsonFiles = files.filter((fileName) => fileName.endsWith('.json'))
+      // Filter for JSON files in .agents/templates directory
+      const jsonFiles = Object.keys(agentTemplates).filter(
+        (filePath) =>
+          filePath.startsWith('.agents/templates/') &&
+          filePath.endsWith('.json')
+      )
 
       // Pass 1: Collect all agent IDs from template files
       const dynamicAgentIds = await this.collectAgentIds(
-        templatesDir,
+        agentTemplates,
         jsonFiles
       )
 
       // Pass 2: Load and validate each agent template
-      for (const fileName of jsonFiles) {
+      for (const filePath of jsonFiles) {
         await this.loadSingleAgent(
-          templatesDir,
-          fileName,
+          agentTemplates,
+          filePath,
           dynamicAgentIds,
           fileContext
         )
       }
     } catch (error) {
       logger.error(
-        { templatesDir, error },
-        'Failed to read .agents/templates directory'
+        { agentTemplates: Object.keys(agentTemplates), error },
+        'Failed to process agent templates'
       )
       this.validationErrors.push({
-        filePath: templatesDir,
-        message: 'Failed to read templates directory',
+        filePath: '.agents/templates/',
+        message: 'Failed to process agent templates',
         details: error instanceof Error ? error.message : 'Unknown error',
       })
     }
@@ -97,16 +100,16 @@ export class DynamicAgentService {
    * First pass: Collect all agent IDs from template files without full validation
    */
   private async collectAgentIds(
-    templatesDir: string,
+    agentTemplates: Record<string, string>,
     jsonFiles: string[]
   ): Promise<string[]> {
     const agentIds: string[] = []
 
-    for (const fileName of jsonFiles) {
-      const filePath = path.join(templatesDir, fileName)
-
+    for (const filePath of jsonFiles) {
       try {
-        const content = fs.readFileSync(filePath, 'utf-8')
+        const content = agentTemplates[filePath]
+        if (!content) continue
+
         const parsedContent = JSON.parse(content)
 
         // Skip override templates (they modify existing agents)
@@ -121,7 +124,7 @@ export class DynamicAgentService {
       } catch (error) {
         // Log but don't fail the collection process
         logger.debug(
-          { fileName, error },
+          { filePath, error },
           'Failed to extract agent ID during collection phase'
         )
       }
@@ -134,20 +137,24 @@ export class DynamicAgentService {
    * Load and validate a single agent template file
    */
   private async loadSingleAgent(
-    templatesDir: string,
-    fileName: string,
+    agentTemplates: Record<string, string>,
+    filePath: string,
     dynamicAgentIds: string[],
     fileContext: ProjectFileContext
   ): Promise<void> {
-    const filePath = path.join(templatesDir, fileName)
-    const relativeFilePath = `.agents/templates/${fileName}`
-    const fileDir = path.join(
-      fileContext.projectRoot,
-      path.dirname(relativeFilePath)
-    )
+    const fileDir = path.join(fileContext.projectRoot, path.dirname(filePath))
 
     try {
-      const content = fs.readFileSync(filePath, 'utf-8')
+      const content = agentTemplates[filePath]
+      if (!content) {
+        this.validationErrors.push({
+          filePath,
+          message: 'Agent template file content not found',
+          details: 'File content is empty or missing',
+        })
+        return
+      }
+
       const parsedContent = JSON.parse(content)
 
       // Skip override templates (they modify existing agents)
@@ -164,7 +171,7 @@ export class DynamicAgentService {
       )
       if (!spawnableValidation.valid) {
         this.validationErrors.push({
-          filePath: relativeFilePath,
+          filePath,
           message: formatSpawnableAgentError(
             spawnableValidation.invalidAgents,
             spawnableValidation.availableAgents
@@ -186,11 +193,11 @@ export class DynamicAgentService {
         promptSchema = this.convertPromptSchema(
           dynamicAgent.promptSchema?.prompt,
           dynamicAgent.promptSchema?.params,
-          relativeFilePath
+          filePath
         )
       } catch (error) {
         this.validationErrors.push({
-          filePath: relativeFilePath,
+          filePath,
           message:
             error instanceof Error ? error.message : 'Schema conversion failed',
           details: error instanceof Error ? error.message : 'Unknown error',
@@ -212,13 +219,19 @@ export class DynamicAgentService {
         stopSequences: dynamicAgent.stopSequences,
         spawnableAgents: validatedSpawnableAgents,
 
-        systemPrompt: resolvePromptField(dynamicAgent.systemPrompt, basePaths),
-        userInputPrompt: resolvePromptField(
-          dynamicAgent.userInputPrompt,
+        systemPrompt: this.resolvePromptFieldFromAgentTemplates(
+          dynamicAgent.systemPrompt,
+          agentTemplates,
           basePaths
         ),
-        agentStepPrompt: resolvePromptField(
+        userInputPrompt: this.resolvePromptFieldFromAgentTemplates(
+          dynamicAgent.userInputPrompt,
+          agentTemplates,
+          basePaths
+        ),
+        agentStepPrompt: this.resolvePromptFieldFromAgentTemplates(
           dynamicAgent.agentStepPrompt,
+          agentTemplates,
           basePaths
         ),
 
@@ -230,31 +243,39 @@ export class DynamicAgentService {
 
       // Add optional prompt fields only if they exist
       if (dynamicAgent.initialAssistantMessage) {
-        agentTemplate.initialAssistantMessage = resolvePromptField(
-          dynamicAgent.initialAssistantMessage,
-          basePaths
-        )
+        agentTemplate.initialAssistantMessage =
+          this.resolvePromptFieldFromAgentTemplates(
+            dynamicAgent.initialAssistantMessage,
+            agentTemplates,
+            basePaths
+          )
       }
 
       if (dynamicAgent.initialAssistantPrefix) {
-        agentTemplate.initialAssistantPrefix = resolvePromptField(
-          dynamicAgent.initialAssistantPrefix,
-          basePaths
-        )
+        agentTemplate.initialAssistantPrefix =
+          this.resolvePromptFieldFromAgentTemplates(
+            dynamicAgent.initialAssistantPrefix,
+            agentTemplates,
+            basePaths
+          )
       }
 
       if (dynamicAgent.stepAssistantMessage) {
-        agentTemplate.stepAssistantMessage = resolvePromptField(
-          dynamicAgent.stepAssistantMessage,
-          basePaths
-        )
+        agentTemplate.stepAssistantMessage =
+          this.resolvePromptFieldFromAgentTemplates(
+            dynamicAgent.stepAssistantMessage,
+            agentTemplates,
+            basePaths
+          )
       }
 
       if (dynamicAgent.stepAssistantPrefix) {
-        agentTemplate.stepAssistantPrefix = resolvePromptField(
-          dynamicAgent.stepAssistantPrefix,
-          basePaths
-        )
+        agentTemplate.stepAssistantPrefix =
+          this.resolvePromptFieldFromAgentTemplates(
+            dynamicAgent.stepAssistantPrefix,
+            agentTemplates,
+            basePaths
+          )
       }
 
       this.templates[dynamicAgent.id] = agentTemplate
@@ -262,15 +283,44 @@ export class DynamicAgentService {
       const errorMessage =
         error instanceof Error ? error.message : 'Unknown error'
       this.validationErrors.push({
-        filePath: relativeFilePath,
-        message: `Error in agent template ${relativeFilePath}: ${errorMessage}`,
+        filePath,
+        message: `Error in agent template ${filePath}: ${errorMessage}`,
         details: errorMessage,
       })
       logger.warn(
-        { fileName, error: errorMessage },
+        { filePath, error: errorMessage },
         'Failed to load dynamic agent template'
       )
     }
+  }
+
+  /**
+   * Resolve prompt field from agentTemplates instead of filesystem
+   */
+  private resolvePromptFieldFromAgentTemplates(
+    promptField: string | { path: string } | undefined,
+    agentTemplates: Record<string, string>,
+    basePaths: string[]
+  ): string {
+    if (!promptField) return ''
+
+    if (typeof promptField === 'string') {
+      return promptField
+    }
+
+    if (typeof promptField === 'object' && promptField.path) {
+      // Try to resolve the path in agentTemplates
+      const content = agentTemplates[promptField.path]
+      if (content !== undefined) {
+        return content
+      }
+
+      // Fallback to original file resolver for backward compatibility
+      const resolved = resolvePromptField(promptField, basePaths)
+      return resolved ?? ''
+    }
+
+    return ''
   }
 
   /**
