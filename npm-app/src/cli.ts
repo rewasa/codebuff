@@ -42,6 +42,11 @@ import {
 import { handleDiff } from './cli-handlers/diff'
 import { showEasterEgg } from './cli-handlers/easter-egg'
 import { handleInitializationFlowLocally } from './cli-handlers/inititalization-flow'
+import {
+  enterAltBuffer,
+  isInAltBufferMode,
+  cleanupAltBuffer,
+} from './cli-handlers/alt-buffer'
 import { Client } from './client'
 import { websocketUrl } from './config'
 import { CONFIG_DIR } from './credentials'
@@ -820,6 +825,21 @@ export class CLI {
       return null
     }
 
+    if (cleanInput === 'altbuffer' || cleanInput === 'alt') {
+      if (isInAltBufferMode()) {
+        console.log(yellow('Already in alt buffer mode! Press ESC to exit.'))
+        this.freshPrompt()
+        return null
+      }
+
+      enterAltBuffer(this.rl, () => {
+        // Callback when exiting alt buffer
+        console.log(green('\nExited alt buffer mode!'))
+        this.freshPrompt()
+      })
+      return null
+    }
+
     // Checkpoint commands
     if (isCheckpointCommand(cleanInput)) {
       trackEvent(AnalyticsEvent.CHECKPOINT_COMMAND_USED, {
@@ -1068,6 +1088,9 @@ export class CLI {
 
     // Call end() on the exit detector to check if user is exiting quickly after an error
     rageDetectors.exitAfterErrorDetector.end()
+
+    // Ensure we exit alt buffer if we're in it
+    cleanupAltBuffer()
 
     Spinner.get().restoreCursor()
     process.removeAllListeners('unhandledRejection')

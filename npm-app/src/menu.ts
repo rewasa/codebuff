@@ -183,6 +183,14 @@ export const interactiveCommandDetails: CommandInfo[] = [
     requireSlash: true,
   },
   {
+    baseCommand: 'altbuffer',
+    description: 'Enter alternate screen buffer demo',
+    isSlashCommand: true,
+    commandText: '',
+    aliases: ['alt'],
+    requireSlash: false,
+  },
+  {
     commandText: '"exit" or Ctrl-C x2',
     baseCommand: 'exit',
     description: 'Quit Codebuff',
