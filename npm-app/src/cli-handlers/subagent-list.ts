@@ -1,4 +1,5 @@
 import { green, yellow, cyan, magenta, bold, gray, blue } from 'picocolors'
+import { pluralize } from '@codebuff/common/util/string'
 import { getSubagentsChronological } from '../subagent-storage'
 import { enterSubagentBuffer } from './subagent'
 import {
@@ -116,9 +117,7 @@ function centerSelectedItem() {
 // Define header lines as a separate function
 const getHeaderLines = (terminalWidth: number) => [
   bold(cyan('🤖 ')) + bold(magenta('Subagent History')),
-  gray(
-    `${subagentList.length} subagent${subagentList.length === 1 ? '' : 's'} found`
-  ),
+  gray(`${pluralize(subagentList.length, 'subagent run')} `),
   '',
   gray('─'.repeat(terminalWidth)),
   '',
@@ -139,25 +138,104 @@ function buildAllContentLines() {
       const isSelected = i === selectedIndex
       const startTime = new Date(agent.startTime).toLocaleTimeString()
 
-      // Show full prompt without truncation
+      // Show prompt truncated to first 3 lines
       const fullPrompt = agent.prompt || '(no prompt recorded)'
       const maxLineLength = terminalWidth - 12 // Adjusted for consistent padding
 
-      // Wrap the full prompt text
-      const words = fullPrompt.split(' ')
-      const promptLines: string[] = []
-      let currentLine = '"' // Start with a quote
+      // Wrap the prompt text, handling markdown code blocks properly
+      const allPromptLines: string[] = []
 
-      for (const word of words) {
-        const testLine = `${currentLine} ${word}`
-        if (testLine.replace(/\u001b\[[0-9;]*m/g, '').length <= maxLineLength) {
-          currentLine = testLine
-        } else {
-          promptLines.push(currentLine)
-          currentLine = `  ${word}` // Indent subsequent lines
+      // Check if prompt contains code blocks
+      if (fullPrompt.includes('```')) {
+        // Handle markdown code blocks specially
+        const lines = fullPrompt.split('\n')
+        let currentLine = '"' // Start with a quote
+        let inCodeBlock = false
+
+        for (let i = 0; i < lines.length; i++) {
+          const line = lines[i]
+
+          // Check for code block markers
+          if (line.trim().startsWith('```')) {
+            inCodeBlock = !inCodeBlock
+          }
+
+          if (inCodeBlock || line.trim().startsWith('```')) {
+            // In code block - preserve line as-is but add to current line if possible
+            if (currentLine === '"') {
+              currentLine = `"${line}`
+            } else {
+              // Finish current line and start new one
+              allPromptLines.push(currentLine)
+              currentLine = `  ${line}` // Indent subsequent lines
+            }
+
+            // If this is the end of a line in code block, finish it
+            if (i < lines.length - 1) {
+              allPromptLines.push(currentLine)
+              currentLine = '  ' // Start next line with indent
+            }
+          } else {
+            // Regular text - use word wrapping
+            const words = line.split(' ')
+            for (const word of words) {
+              const testLine =
+                currentLine === '"' ? `"${word}` : `${currentLine} ${word}`
+              if (
+                testLine.replace(/\u001b\[[0-9;]*m/g, '').length <=
+                maxLineLength
+              ) {
+                currentLine = testLine
+              } else {
+                allPromptLines.push(currentLine)
+                currentLine = `  ${word}` // Indent subsequent lines
+              }
+            }
+
+            // If there are more lines, finish current line
+            if (i < lines.length - 1 && currentLine.trim() !== '') {
+              allPromptLines.push(currentLine)
+              currentLine = '  ' // Start next line with indent
+            }
+          }
         }
+
+        // Add final line
+        if (currentLine.trim() !== '' && currentLine !== '  ') {
+          allPromptLines.push(currentLine + '"')
+        } else if (allPromptLines.length > 0) {
+          // Add quote to last line if we have content
+          const lastLine = allPromptLines[allPromptLines.length - 1]
+          allPromptLines[allPromptLines.length - 1] = lastLine + '"'
+        } else {
+          allPromptLines.push('""')
+        }
+      } else {
+        // No code blocks - use simple word wrapping
+        const words = fullPrompt.split(' ')
+        let currentLine = '"' // Start with a quote
+
+        for (const word of words) {
+          const testLine = `${currentLine} ${word}`
+          if (
+            testLine.replace(/\u001b\[[0-9;]*m/g, '').length <= maxLineLength
+          ) {
+            currentLine = testLine
+          } else {
+            allPromptLines.push(currentLine)
+            currentLine = `  ${word}` // Indent subsequent lines
+          }
+        }
+        allPromptLines.push(currentLine + '"') // End with a quote
       }
-      promptLines.push(currentLine + '"') // End with a quote
+
+      // Truncate to first 3 lines and add ellipsis if needed
+      const promptLines = allPromptLines.slice(0, 3)
+      if (allPromptLines.length > 3) {
+        // Replace the last line with ellipsis
+        const lastLine = promptLines[promptLines.length - 1]
+        promptLines[promptLines.length - 1] = lastLine.replace('"', '..."')
+      }
 
       const agentInfo = `${bold(agent.agentType)}`
       const timeInfo = agent.isActive
@@ -237,7 +315,7 @@ function renderSubagentList() {
   }
 
   // Display status line at bottom
-  const statusLine = `\n${gray(`Use ↑/↓/j/k to navigate, PgUp/PgDn for fast scroll, Enter to view, ESC to exit`)}`
+  const statusLine = `\n${gray(`Use ↑/↓/j/k to navigate, PgUp/PgDn for fast scroll, Enter to view, ESC to go back`)}`
 
   process.stdout.write(statusLine)
   process.stdout.write(HIDE_CURSOR)

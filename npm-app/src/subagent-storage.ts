@@ -87,7 +87,6 @@ function writeToTraceLog(agentId: string, agentType: string, chunk: string) {
     fs.appendFileSync(logFile, chunkToWrite, 'utf8')
   } catch (error) {
     // Silently fail if we can't write to the log file
-    console.warn(`Warning: Could not write to trace log for ${agentId}:`, error)
   }
 }
 

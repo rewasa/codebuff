@@ -8,6 +8,7 @@ import {
   blue,
   italic,
 } from 'picocolors'
+import { pluralize } from '@codebuff/common/util/string'
 import {
   getSubagentData,
   getSubagentFullContent,
@@ -43,9 +44,7 @@ export function isInSubagentBufferMode(): boolean {
  */
 export function displaySubagentList(agents: SubagentData[]) {
   console.log(bold(cyan('🤖 Available Subagents')))
-  console.log(
-    gray(`Found ${agents.length} subagent${agents.length === 1 ? '' : 's'}`)
-  )
+  console.log(gray(`Found ${pluralize(agents.length, 'subagent')}`))
   console.log()
   if (agents.length === 0) {
     console.log(gray('  (none)'))
@@ -85,9 +84,15 @@ export function enterSubagentBuffer(
 
   currentAgentId = agentId
 
+  // Reset scroll state to ensure clean start
+  scrollOffset = 0
+  contentLines = []
+  lastContentLength = 0
+
   // Enter alternate screen buffer
   process.stdout.write(ENTER_ALT_BUFFER)
   process.stdout.write(CLEAR_SCREEN)
+  process.stdout.write(MOVE_CURSOR(1, 1)) // Ensure cursor starts at top-left
   process.stdout.write(HIDE_CURSOR)
 
   isInSubagentBuffer = true
@@ -187,7 +192,7 @@ function renderSubagentContent() {
   }
 
   // Display status line at bottom
-  const statusLine = `\n${gray(`Use ↑/↓/PgUp/PgDn to scroll, q to go back, ESC to exit`)}`
+  const statusLine = `\n${gray(`Use ↑/↓/PgUp/PgDn to scroll, ESC to go back`)}`
 
   process.stdout.write(statusLine)
 }
@@ -206,7 +211,7 @@ function setupSubagentKeyHandler(rl: any, onExit: () => void) {
   process.stdin.on('keypress', (str: string, key: any) => {
     if (key && key.name === 'escape') {
       exitSubagentBuffer(rl)
-      onExit()
+      enterSubagentListBuffer(rl, onExit)
       return
     }
 
@@ -214,13 +219,6 @@ function setupSubagentKeyHandler(rl: any, onExit: () => void) {
     if (key && key.ctrl && key.name === 'c') {
       exitSubagentBuffer(rl)
       onExit()
-      return
-    }
-
-    // Handle q - go back to subagent list
-    if (key && key.name === 'q') {
-      exitSubagentBuffer(rl)
-      enterSubagentListBuffer(rl, onExit)
       return
     }
 
