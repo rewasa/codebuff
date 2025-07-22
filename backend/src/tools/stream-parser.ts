@@ -21,6 +21,7 @@ import { toolParams } from '../tools'
 import { logger } from '../util/logger'
 import { asSystemMessage, expireMessages } from '../util/messages'
 import { requestToolCall } from '../websockets/websocket-action'
+import { createWebSocketMessenger } from '../websockets/messaging'
 import { processStreamWithTags } from '../xml-stream-parser'
 import {
   ClientToolCall,
@@ -132,6 +133,7 @@ export async function processStreamWithTools<T extends string>(options: {
     userId,
     repoId,
     agentTemplate,
+    messenger: createWebSocketMessenger(ws),
     mutableState: {
       agentState,
       agentContext,

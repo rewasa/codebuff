@@ -92,6 +92,12 @@ import { Spinner } from './utils/spinner'
 import { toolRenderers } from './utils/tool-renderers'
 import { createXMLStreamParser } from './utils/xml-stream-parser'
 import { getScrapedContentBlocks, parseUrlsFromContent } from './web-scraper'
+import {
+  storeSubagentChunk,
+  markSubagentInactive,
+  getAllSubagentIds,
+} from './subagent-storage'
+import { refreshSubagentDisplay } from './cli-handlers/subagent'
 
 /**
  * Get local agent names from the .agents/templates directory
@@ -915,6 +921,17 @@ export class Client {
     this.webSocket.subscribe('request-reconnect', () => {
       this.reconnectWhenNextIdle()
     })
+
+    // Handle subagent streaming messages
+    this.webSocket.subscribe('subagent-response-chunk', (action) => {
+      const { userInputId, agentId, agentType, chunk, prompt } = action
+
+      // Store the chunk locally
+      storeSubagentChunk({ agentId, agentType, chunk, prompt })
+
+      // Refresh display if we're currently viewing this agent
+      refreshSubagentDisplay(agentId)
+    })
   }
 
   private showUsageWarning() {
@@ -1376,6 +1393,13 @@ Go to https://www.codebuff.com/config for more information.`) +
           setMessages(this.sessionState.mainAgentState.messageHistory)
         }
 
+        // Mark any subagents as inactive when the main response completes
+        // This is a simple heuristic - in practice you might want more sophisticated tracking
+        const allSubagentIds = getAllSubagentIds()
+        allSubagentIds.forEach((agentId: string) => {
+          markSubagentInactive(agentId)
+        })
+
         // Show total credits used for this prompt if significant
         const credits =
           this.creditsByPromptId[userInputId]?.reduce((a, b) => a + b, 0) ?? 0
@@ -1579,7 +1603,7 @@ Go to https://www.codebuff.com/config for more information.`) +
         const localAgentNames = getLocalAgentNames()
         this.agentNames = {
           ...parsedAction.data.agentNames,
-          ...localAgentNames
+          ...localAgentNames,
         }
       }
 

@@ -10,6 +10,7 @@ import { WebSocket } from 'ws'
 import { agentRegistry } from '../../templates/agent-registry'
 import { AgentTemplate } from '../../templates/types'
 import { logger } from '../../util/logger'
+import { WebSocketMessenger } from '../../websockets/messaging'
 import { CodebuffToolCall, CodebuffToolHandlerFunction } from '../constants'
 
 export const handleSpawnAgents = ((params: {
@@ -25,6 +26,7 @@ export const handleSpawnAgents = ((params: {
     fingerprintId?: string
     userId?: string
     agentTemplate?: AgentTemplate
+    messenger?: WebSocketMessenger
     mutableState?: {
       messages: CodebuffMessage[]
       agentState: AgentState
@@ -46,6 +48,7 @@ export const handleSpawnAgents = ((params: {
     fingerprintId,
     userId,
     agentTemplate: parentAgentTemplate,
+    messenger,
   } = state
   const mutableState = state.mutableState
 
@@ -62,6 +65,11 @@ export const handleSpawnAgents = ((params: {
   if (!parentAgentTemplate) {
     throw new Error(
       'Internal error for spawn_agents: Missing agentTemplate in state'
+    )
+  }
+  if (!messenger) {
+    throw new Error(
+      'Internal error for spawn_agents: Missing messenger in state'
     )
   }
   if (!mutableState?.messages) {
@@ -155,6 +163,7 @@ export const handleSpawnAgents = ((params: {
 
         // Import loopAgentSteps dynamically to avoid circular dependency
         const { loopAgentSteps } = await import('../../run-agent-step')
+
         const result = await loopAgentSteps(ws, {
           userInputId: `${userInputId}-${agentType}${agentId}`,
           prompt: prompt || '',
@@ -166,7 +175,16 @@ export const handleSpawnAgents = ((params: {
           toolResults: [],
           userId,
           clientSessionId,
-          onResponseChunk: () => {},
+          onResponseChunk: (chunk: string) => {
+            // Send subagent streaming chunks to client
+            messenger.sendSubagentChunk({
+              userInputId,
+              agentId,
+              agentType,
+              chunk,
+              prompt,
+            })
+          },
         })
 
         return {
