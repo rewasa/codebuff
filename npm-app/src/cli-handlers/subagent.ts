@@ -143,28 +143,19 @@ function updateSubagentContent() {
   }
   lastContentLength = fullContent.length
 
-  // Build content lines
-  const startTime = new Date(agentData.startTime).toLocaleString()
-  const lastActivity = new Date(agentData.lastActivity).toLocaleString()
-  const header = [
-    bold(cyan(`🤖 SUBAGENT: ${currentAgentId}`)),
-    bold(magenta(`Type: ${agentData.agentType}`)),
-    bold(
-      agentData.isActive ? green('Status: Active') : gray('Status: Inactive')
-    ),
-    bold(blue(`Started: ${startTime}`)),
-    bold(blue(`Last Activity: ${lastActivity}`)),
-    bold(blue(`Messages: ${agentData.messages.length}`)),
-    agentData.prompt ? bold(gray(`Prompt: ${agentData.prompt}`)) : '',
-    '',
-  ].filter((line) => line !== '') // Remove empty strings from prompt field when not present
-
   // Split content into lines
   const contentBodyLines = fullContent
     ? fullContent.split('\n')
     : ['(no content yet)']
 
-  contentLines = [...header, ...contentBodyLines, '']
+  contentLines = [
+    agentData.prompt ? bold(gray(`Prompt: ${agentData.prompt}`)) : '',
+    ...contentBodyLines,
+    '',
+  ]
+
+  // Always start at the top when entering a new subagent view
+  scrollOffset = 0
 
   renderSubagentContent()
 }
