@@ -28,6 +28,64 @@ import {
 } from '../utils/terminal'
 import { enterSubagentListBuffer } from './subagent-list'
 
+/**
+ * Wrap a line to fit within terminal width, accounting for ANSI escape codes
+ */
+function wrapLine(line: string, terminalWidth: number): string[] {
+  if (!line) return ['']
+
+  // Remove ANSI escape codes to calculate actual display width
+  const stripAnsi = (str: string) => str.replace(/\u001b\[[0-9;]*m/g, '')
+  const displayLength = stripAnsi(line).length
+
+  // If line fits, return as-is
+  if (displayLength <= terminalWidth) {
+    return [line]
+  }
+
+  // For long lines, we need to wrap them
+  const wrappedLines: string[] = []
+  let currentLine = ''
+  let currentDisplayLength = 0
+
+  // Split by characters, preserving ANSI codes
+  let i = 0
+  while (i < line.length) {
+    // Check for ANSI escape sequence
+    if (line[i] === '\u001b' && line[i + 1] === '[') {
+      // Find the end of the ANSI sequence
+      let j = i + 2
+      while (j < line.length && !/[a-zA-Z]/.test(line[j])) {
+        j++
+      }
+      if (j < line.length) j++ // Include the final letter
+
+      // Add the entire ANSI sequence without counting towards display length
+      currentLine += line.slice(i, j)
+      i = j
+    } else {
+      // Regular character
+      if (currentDisplayLength >= terminalWidth) {
+        // Start a new line
+        wrappedLines.push(currentLine)
+        currentLine = line[i]
+        currentDisplayLength = 1
+      } else {
+        currentLine += line[i]
+        currentDisplayLength++
+      }
+      i++
+    }
+  }
+
+  // Add the final line if it has content
+  if (currentLine) {
+    wrappedLines.push(currentLine)
+  }
+
+  return wrappedLines.length > 0 ? wrappedLines : ['']
+}
+
 let isInSubagentBuffer = false
 let originalKeyHandler: ((str: string, key: any) => void) | null = null
 let scrollOffset = 0
@@ -122,6 +180,9 @@ export function exitSubagentBuffer(rl: any) {
     originalKeyHandler = null
   }
 
+  // Remove resize listener
+  process.stdout.removeAllListeners('resize')
+
   // Exit alternate screen buffer
   process.stdout.write(SHOW_CURSOR)
   process.stdout.write(EXIT_ALT_BUFFER)
@@ -143,16 +204,28 @@ function updateSubagentContent() {
   }
   lastContentLength = fullContent.length
 
-  // Split content into lines
+  // Split content into lines and wrap them properly
+  const terminalWidth = process.stdout.columns || 80
   const contentBodyLines = fullContent
     ? fullContent.split('\n')
     : ['(no content yet)']
 
-  contentLines = [
-    agentData.prompt ? bold(gray(`Prompt: ${agentData.prompt}`)) : '',
-    ...contentBodyLines,
-    '',
-  ]
+  const wrappedLines: string[] = []
+
+  // Add prompt if exists
+  if (agentData.prompt) {
+    const promptLine = bold(gray(`Prompt: ${agentData.prompt}`))
+    wrappedLines.push(...wrapLine(promptLine, terminalWidth))
+  }
+
+  // Wrap each content line
+  for (const line of contentBodyLines) {
+    wrappedLines.push(...wrapLine(line, terminalWidth))
+  }
+
+  wrappedLines.push('') // Empty line at end
+
+  contentLines = wrappedLines
 
   // Always start at the top when entering a new subagent view
   scrollOffset = 0
@@ -197,6 +270,14 @@ function setupSubagentKeyHandler(rl: any, onExit: () => void) {
 
   // Remove existing keypress listeners
   process.stdin.removeAllListeners('keypress')
+
+  // Handle terminal resize
+  const handleResize = () => {
+    // Recalculate content with new terminal dimensions
+    updateSubagentContent()
+  }
+
+  process.stdout.on('resize', handleResize)
 
   // Add our custom handler
   process.stdin.on('keypress', (str: string, key: any) => {
