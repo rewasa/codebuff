@@ -96,6 +96,7 @@ import {
   storeSubagentChunk,
   markSubagentInactive,
   getAllSubagentIds,
+  clearSubagentStorage,
 } from './subagent-storage'
 import { refreshSubagentDisplay } from './cli-handlers/subagent'
 
@@ -314,6 +315,7 @@ export class Client {
     setMessages([])
     startNewChat()
     clearCachedProjectFileContext()
+    clearSubagentStorage()
     await this.warmContextCache()
   }
 

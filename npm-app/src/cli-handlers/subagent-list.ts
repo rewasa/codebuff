@@ -58,7 +58,9 @@ export function enterSubagentListBuffer(rl: any, onExit: () => void) {
 
   isInSubagentListBuffer = true
 
-  // Display subagent list
+  // Build content, center the view, and then render
+  buildAllContentLines()
+  centerSelectedItem()
   renderSubagentList()
 
   // Set up key handler
@@ -91,43 +93,40 @@ export function exitSubagentListBuffer(rl: any) {
   isInSubagentListBuffer = false
 }
 
-function autoScrollToSelection() {
+function centerSelectedItem() {
   if (selectedIndex < 0 || selectedIndex >= subagentLinePositions.length) {
     return // Safety check
   }
 
   const terminalHeight = process.stdout.rows || 24
-  const maxLines = terminalHeight - 2
-  const selectedLineIndex = subagentLinePositions[selectedIndex]
+  const terminalWidth = process.stdout.columns || 80
+  const headerHeight = getHeaderLines(terminalWidth).length
+  const maxScrollableLines = terminalHeight - headerHeight - 2
+  const selectedLineIndex = subagentLinePositions[selectedIndex] // No offset needed now
+  const maxScrollOffset = Math.max(
+    0,
+    allContentLines.length - maxScrollableLines
+  )
 
-  const viewportStart = scrollOffset
-  const viewportEnd = scrollOffset + maxLines - 1
-
-  if (selectedLineIndex < viewportStart) {
-    // Selected item is above viewport, scroll up
-    scrollOffset = Math.max(0, selectedLineIndex - 2) // Add some padding
-  } else if (selectedLineIndex > viewportEnd) {
-    // Selected item is below viewport, scroll down
-    scrollOffset = Math.min(
-      Math.max(0, allContentLines.length - maxLines),
-      selectedLineIndex - maxLines + 3 // Add some padding
-    )
-  }
+  // Center item in the scrollable viewport
+  const centerOffset = selectedLineIndex - Math.floor(maxScrollableLines / 2)
+  scrollOffset = Math.max(0, Math.min(maxScrollOffset, centerOffset))
 }
+
+// Define header lines as a separate function
+const getHeaderLines = (terminalWidth: number) => [
+  bold(cyan('🤖 ')) + bold(magenta('Subagent History')),
+  gray(
+    `${subagentList.length} subagent${subagentList.length === 1 ? '' : 's'} found`
+  ),
+  '',
+  gray('─'.repeat(terminalWidth)),
+  '',
+]
 
 function buildAllContentLines() {
   const terminalWidth = process.stdout.columns || 80
-
-  // Header with improved styling
-  const lines = [
-    bold(cyan('🤖 ')) + bold(magenta('Subagent History')),
-    gray(
-      `${subagentList.length} subagent${subagentList.length === 1 ? '' : 's'} found`
-    ),
-    '',
-    gray('─'.repeat(terminalWidth)),
-    '',
-  ]
+  const lines: string[] = []
   subagentLinePositions = [] // Reset before building
 
   if (subagentList.length === 0) {
@@ -142,41 +141,60 @@ function buildAllContentLines() {
 
       // Show full prompt without truncation
       const fullPrompt = agent.prompt || '(no prompt recorded)'
-      const maxLineLength = terminalWidth - 6 // Leave space for indentation and quotes
+      const maxLineLength = terminalWidth - 12 // Adjusted for consistent padding
 
-      // Split prompt into words and wrap to multiple lines (no limit)
+      // Wrap the full prompt text
       const words = fullPrompt.split(' ')
       const promptLines: string[] = []
-      let currentLine = ''
+      let currentLine = '"' // Start with a quote
 
       for (const word of words) {
-        if (currentLine.length + word.length + 1 <= maxLineLength) {
-          currentLine += (currentLine ? ' ' : '') + word
+        const testLine = `${currentLine} ${word}`
+        if (testLine.replace(/\u001b\[[0-9;]*m/g, '').length <= maxLineLength) {
+          currentLine = testLine
         } else {
-          if (currentLine) promptLines.push(currentLine)
-          currentLine = word
+          promptLines.push(currentLine)
+          currentLine = `  ${word}` // Indent subsequent lines
         }
       }
-      if (currentLine) {
-        promptLines.push(currentLine)
-      }
+      promptLines.push(currentLine + '"') // End with a quote
 
-      const prefix = isSelected ? cyan('► ') : '  '
-      const agentInfo = `${bold(agent.agentType)} (${agent.agentId.substring(0, 8)}...)`
+      const agentInfo = `${bold(agent.agentType)}`
       const timeInfo = agent.isActive
         ? green(`[Active - ${startTime}]`)
         : gray(`[${startTime}]`)
-      const line = `${prefix}${agentInfo} ${timeInfo}`
+      const headerLine = `${agentInfo} ${timeInfo}`
 
-      lines.push(line)
+      const contentForBox = [headerLine, ...promptLines.map((p) => gray(p))]
 
-      // Add each prompt line with proper indentation
-      promptLines.forEach((promptLine, index) => {
-        const indent = isSelected ? cyan('  ') : '  '
-        const quote = index === 0 ? '"' : ' '
-        const endQuote = index === promptLines.length - 1 ? '"' : ''
-        lines.push(`${indent}${gray(quote + promptLine + endQuote)}`)
-      })
+      if (isSelected) {
+        // Calculate box width based on content, stripping ANSI codes for accurate length
+        const maxContentWidth = Math.max(
+          ...contentForBox.map(
+            (line) => line.replace(/\u001b\[[0-9;]*m/g, '').length
+          )
+        )
+        const boxWidth = Math.min(terminalWidth - 6, maxContentWidth)
+
+        // Add top border
+        lines.push(`  ${cyan('┌' + '─'.repeat(boxWidth + 2) + '┐')}`)
+
+        // Add content lines with proper padding
+        contentForBox.forEach((line) => {
+          const cleanLine = line.replace(/\u001b\[[0-9;]*m/g, '')
+          const padding = ' '.repeat(Math.max(0, boxWidth - cleanLine.length))
+          lines.push(`  ${cyan('│')} ${line}${padding} ${cyan('│')}`)
+        })
+
+        // Add bottom border
+        lines.push(`  ${cyan('└' + '─'.repeat(boxWidth + 2) + '┘')}`)
+      } else {
+        // Correctly render non-selected items
+        lines.push(`  ${headerLine}`)
+        promptLines.forEach((p) => {
+          lines.push(`  ${gray(p)}`)
+        })
+      }
 
       if (i < subagentList.length - 1) {
         lines.push('') // Empty line between items
@@ -196,27 +214,30 @@ function renderSubagentList() {
 
   const terminalHeight = process.stdout.rows || 24
   const terminalWidth = process.stdout.columns || 80
-  const maxLines = terminalHeight - 2 // Leave space for status line
 
-  const totalLines = allContentLines.length
+  // Render fixed header
+  const headerLines = getHeaderLines(terminalWidth)
+  process.stdout.write(headerLines.join('\n'))
+  process.stdout.write('\n')
 
-  // Calculate visible lines based on scroll offset
+  // Render scrollable content
+  const maxScrollableLines = terminalHeight - headerLines.length - 2 // Leave space for header and status line
   const visibleLines = allContentLines.slice(
     scrollOffset,
-    scrollOffset + maxLines
+    scrollOffset + maxScrollableLines
   )
 
-  // Display content
+  // Display scrollable content
   process.stdout.write(visibleLines.join('\n'))
 
   // Add padding to fill remaining space
-  const remainingLines = maxLines - visibleLines.length
+  const remainingLines = maxScrollableLines - visibleLines.length
   if (remainingLines > 0) {
     process.stdout.write('\n'.repeat(remainingLines))
   }
 
   // Display status line at bottom
-  const statusLine = `\n${gray(`Use ↑/↓/j/k to select, PgUp/PgDn to scroll, Enter to view, ESC to exit`)}`
+  const statusLine = `\n${gray(`Use ↑/↓/j/k to navigate, PgUp/PgDn for fast scroll, Enter to view, ESC to exit`)}`
 
   process.stdout.write(statusLine)
   process.stdout.write(HIDE_CURSOR)
@@ -259,82 +280,60 @@ function setupSubagentListKeyHandler(rl: any, onExit: () => void) {
       return
     }
 
-    // Handle scrolling through content
-    const terminalHeight = process.stdout.rows || 24
-    const maxLines = terminalHeight - 2
-    const maxScrollOffset = Math.max(0, allContentLines.length - maxLines)
+    // Handle carousel-style navigation - all scroll keys move between items
+    if (key && (key.name === 'up' || key.name === 'k')) {
+      if (selectedIndex > 0) {
+        selectedIndex--
+        // Center the selected item
+        centerSelectedItem()
+        renderSubagentList()
+      }
+      return
+    }
+
+    if (key && (key.name === 'down' || key.name === 'j')) {
+      if (selectedIndex < subagentList.length - 1) {
+        selectedIndex++
+        // Center the selected item
+        centerSelectedItem()
+        renderSubagentList()
+      }
+      return
+    }
 
     if (key && key.name === 'pageup') {
-      const newOffset = Math.max(0, scrollOffset - maxLines)
-      if (newOffset !== scrollOffset) {
-        scrollOffset = newOffset
+      const newIndex = Math.max(0, selectedIndex - 5) // Jump 5 items up
+      if (newIndex !== selectedIndex) {
+        selectedIndex = newIndex
+        centerSelectedItem()
         renderSubagentList()
       }
       return
     }
 
     if (key && key.name === 'pagedown') {
-      const newOffset = Math.min(maxScrollOffset, scrollOffset + maxLines)
-      if (newOffset !== scrollOffset) {
-        scrollOffset = newOffset
+      const newIndex = Math.min(subagentList.length - 1, selectedIndex + 5) // Jump 5 items down
+      if (newIndex !== selectedIndex) {
+        selectedIndex = newIndex
+        centerSelectedItem()
         renderSubagentList()
       }
       return
     }
 
     if (key && key.name === 'home') {
-      if (scrollOffset !== 0) {
-        scrollOffset = 0
+      if (selectedIndex !== 0) {
+        selectedIndex = 0
+        centerSelectedItem()
         renderSubagentList()
       }
       return
     }
 
     if (key && key.name === 'end') {
-      if (scrollOffset !== maxScrollOffset) {
-        scrollOffset = maxScrollOffset
-        renderSubagentList()
-      }
-      return
-    }
-
-    // Handle item navigation with up/down arrows
-    if (key && key.name === 'up') {
-      if (selectedIndex > 0) {
-        selectedIndex--
-        // Auto-scroll to keep selected item visible
-        autoScrollToSelection()
-        renderSubagentList()
-      }
-      return
-    }
-
-    if (key && key.name === 'down') {
-      if (selectedIndex < subagentList.length - 1) {
-        selectedIndex++
-        // Auto-scroll to keep selected item visible
-        autoScrollToSelection()
-        renderSubagentList()
-      }
-      return
-    }
-
-    // Handle selection navigation (j/k keys for vim-like navigation)
-    if (key && key.name === 'j') {
-      if (selectedIndex < subagentList.length - 1) {
-        selectedIndex++
-        // Auto-scroll to keep selected item visible
-        autoScrollToSelection()
-        renderSubagentList()
-      }
-      return
-    }
-
-    if (key && key.name === 'k') {
-      if (selectedIndex > 0) {
-        selectedIndex--
-        // Auto-scroll to keep selected item visible
-        autoScrollToSelection()
+      if (selectedIndex !== subagentList.length - 1) {
+        selectedIndex = subagentList.length - 1
+        centerSelectedItem()
         renderSubagentList()
       }
       return

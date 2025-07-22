@@ -1044,16 +1044,6 @@ export class CLI {
 
     if (key.name === 'escape') {
       this.handleEscKey()
-    } // Handle Ctrl+R to show subagent list
-    if (key && key.ctrl && key.name === 'r' && !this.isReceivingResponse) {
-      if (isInSubagentListMode() || isInSubagentBufferMode()) {
-        return // Don't interfere with existing buffer modes
-      }
-
-      enterSubagentListBuffer(this.rl, () => {
-        this.freshPrompt()
-      })
-      return
     }
 
     if (str === '/') {

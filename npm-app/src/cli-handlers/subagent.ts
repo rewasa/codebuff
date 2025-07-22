@@ -25,6 +25,7 @@ import {
   SHOW_CURSOR,
   MOVE_CURSOR,
 } from '../utils/terminal'
+import { enterSubagentListBuffer } from './subagent-list'
 
 let isInSubagentBuffer = false
 let originalKeyHandler: ((str: string, key: any) => void) | null = null
@@ -186,7 +187,7 @@ function renderSubagentContent() {
   }
 
   // Display status line at bottom
-  const statusLine = `\n${gray(`Use ↑/↓/PgUp/PgDn to scroll, ESC to exit`)}`
+  const statusLine = `\n${gray(`Use ↑/↓/PgUp/PgDn to scroll, q to go back, ESC to exit`)}`
 
   process.stdout.write(statusLine)
 }
@@ -213,6 +214,13 @@ function setupSubagentKeyHandler(rl: any, onExit: () => void) {
     if (key && key.ctrl && key.name === 'c') {
       exitSubagentBuffer(rl)
       onExit()
+      return
+    }
+
+    // Handle q - go back to subagent list
+    if (key && key.name === 'q') {
+      exitSubagentBuffer(rl)
+      enterSubagentListBuffer(rl, onExit)
       return
     }
 

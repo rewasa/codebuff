@@ -185,7 +185,7 @@ export const interactiveCommandDetails: CommandInfo[] = [
 
   {
     baseCommand: 'subagent',
-    description: 'Show subagent list or view specific subagent by ID (Ctrl+R)',
+    description: 'Show subagent list or view specific subagent by ID',
     isSlashCommand: true,
     commandText: '',
     params: '[agent-id]',
@@ -442,7 +442,7 @@ ${cyan('  • "Set up CI/CD pipeline config"')}
   )
 
   console.log(
-    `\n${bold(underline('KEYBOARD SHORTCUTS'))}\n\n${cyan('Ctrl+R')}${' '.repeat(fixedCommandWidth - 6)}Show subagent list\n${cyan('ESC')}${' '.repeat(fixedCommandWidth - 3)}Stop AI response or exit special modes\n${cyan('Ctrl+C')}${' '.repeat(fixedCommandWidth - 6)}Exit application (press twice)\n`
+    `\n${bold(underline('KEYBOARD SHORTCUTS'))}\n\n${cyan('ESC')}${' '.repeat(fixedCommandWidth - 3)}Stop AI response or exit special modes\n${cyan('Ctrl+C')}${' '.repeat(fixedCommandWidth - 6)}Exit application (press twice)\n`
   )
 
   console.log(`\n↓ Enter your prompt or command below ↓`)
