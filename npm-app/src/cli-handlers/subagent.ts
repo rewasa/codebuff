@@ -27,63 +27,23 @@ import {
   MOVE_CURSOR,
 } from '../utils/terminal'
 import { enterSubagentListBuffer } from './subagent-list'
+import wrapAnsi from 'wrap-ansi'
+import stringWidth from 'string-width'
 
 /**
- * Wrap a line to fit within terminal width, accounting for ANSI escape codes
+ * Wrap a line to fit within terminal width using robust npm packages
  */
 function wrapLine(line: string, terminalWidth: number): string[] {
   if (!line) return ['']
 
-  // Remove ANSI escape codes to calculate actual display width
-  const stripAnsi = (str: string) => str.replace(/\u001b\[[0-9;]*m/g, '')
-  const displayLength = stripAnsi(line).length
-
-  // If line fits, return as-is
-  if (displayLength <= terminalWidth) {
+  // Use string-width to check actual display width
+  if (stringWidth(line) <= terminalWidth) {
     return [line]
   }
 
-  // For long lines, we need to wrap them
-  const wrappedLines: string[] = []
-  let currentLine = ''
-  let currentDisplayLength = 0
-
-  // Split by characters, preserving ANSI codes
-  let i = 0
-  while (i < line.length) {
-    // Check for ANSI escape sequence
-    if (line[i] === '\u001b' && line[i + 1] === '[') {
-      // Find the end of the ANSI sequence
-      let j = i + 2
-      while (j < line.length && !/[a-zA-Z]/.test(line[j])) {
-        j++
-      }
-      if (j < line.length) j++ // Include the final letter
-
-      // Add the entire ANSI sequence without counting towards display length
-      currentLine += line.slice(i, j)
-      i = j
-    } else {
-      // Regular character
-      if (currentDisplayLength >= terminalWidth) {
-        // Start a new line
-        wrappedLines.push(currentLine)
-        currentLine = line[i]
-        currentDisplayLength = 1
-      } else {
-        currentLine += line[i]
-        currentDisplayLength++
-      }
-      i++
-    }
-  }
-
-  // Add the final line if it has content
-  if (currentLine) {
-    wrappedLines.push(currentLine)
-  }
-
-  return wrappedLines.length > 0 ? wrappedLines : ['']
+  // Use wrap-ansi for robust ANSI-aware wrapping
+  const wrapped = wrapAnsi(line, terminalWidth, { hard: true })
+  return wrapped.split('\n')
 }
 
 let isInSubagentBuffer = false
@@ -212,18 +172,31 @@ function updateSubagentContent() {
 
   const wrappedLines: string[] = []
 
-  // Add prompt if exists
-  if (agentData.prompt) {
+  // Add prompt if exists (but don't duplicate if it's already in the content)
+  if (
+    agentData.prompt &&
+    !fullContent.includes(`Prompt: ${agentData.prompt}`)
+  ) {
     const promptLine = bold(gray(`Prompt: ${agentData.prompt}`))
     wrappedLines.push(...wrapLine(promptLine, terminalWidth))
+    wrappedLines.push('') // Add spacing after prompt
   }
 
-  // Wrap each content line
-  for (const line of contentBodyLines) {
-    wrappedLines.push(...wrapLine(line, terminalWidth))
+  // Wrap each content line, preserving empty lines
+  for (let i = 0; i < contentBodyLines.length; i++) {
+    const line = contentBodyLines[i]
+    if (line === '') {
+      wrappedLines.push('') // Preserve empty lines
+    } else {
+      const wrapped = wrapLine(line, terminalWidth)
+      wrappedLines.push(...wrapped)
+    }
   }
 
-  wrappedLines.push('') // Empty line at end
+  // Ensure we end with an empty line for spacing
+  if (wrappedLines.length > 0 && wrappedLines[wrappedLines.length - 1] !== '') {
+    wrappedLines.push('')
+  }
 
   contentLines = wrappedLines
 
