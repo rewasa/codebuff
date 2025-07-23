@@ -173,9 +173,6 @@ export function markSubagentInactive(agentId: string) {
  * Clear all subagent data
  */
 export function clearSubagentStorage() {
-  console.log(
-    `[DEBUG] Clearing subagent storage, had ${subagentStorage.size} agents`
-  )
   subagentStorage.clear()
   agentHeadersWritten.clear()
 }
@@ -186,9 +183,6 @@ export function clearSubagentStorage() {
 export function getSubagentFullContent(agentId: string): string {
   const messages = getSubagentMessages(agentId)
   const content = messages.map((msg) => msg.chunk).join('')
-  console.log(
-    `[DEBUG] getSubagentFullContent for ${agentId}: ${messages.length} messages, ${content.length} total chars`
-  )
   return content
 }
 

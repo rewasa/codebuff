@@ -12,10 +12,9 @@ import { asyncAgentManager } from '../../async-agent-manager'
 import { agentRegistry } from '../../templates/agent-registry'
 import { AgentTemplate } from '../../templates/types'
 import { logger } from '../../util/logger'
-import { SendSubagentChunk } from '../../websockets/messaging'
-import { CodebuffToolCall, CodebuffToolHandlerFunction } from '../constants'
-import { handleSpawnAgents } from './spawn-agents'
 
+import { CodebuffToolCall, CodebuffToolHandlerFunction } from '../constants'
+import { handleSpawnAgents, SendSubagentChunk } from './spawn-agents'
 export const handleSpawnAgentsAsync = ((params: {
   previousToolCallFinished: Promise<void>
   toolCall: CodebuffToolCall<'spawn_agents_async'>

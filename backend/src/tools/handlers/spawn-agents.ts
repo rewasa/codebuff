@@ -7,11 +7,19 @@ import { ProjectFileContext } from '@codebuff/common/util/file'
 import { generateCompactId } from '@codebuff/common/util/string'
 import { CoreMessage } from 'ai'
 import { WebSocket } from 'ws'
+
 import { agentRegistry } from '../../templates/agent-registry'
 import { AgentTemplate } from '../../templates/types'
 import { logger } from '../../util/logger'
-import { SendSubagentChunk } from '../../websockets/messaging'
 import { CodebuffToolCall, CodebuffToolHandlerFunction } from '../constants'
+
+export type SendSubagentChunk = (data: {
+  userInputId: string
+  agentId: string
+  agentType: string
+  chunk: string
+  prompt?: string
+}) => void
 
 export const handleSpawnAgents = ((params: {
   previousToolCallFinished: Promise<void>

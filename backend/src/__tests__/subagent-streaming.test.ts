@@ -7,7 +7,7 @@ import * as runAgentStep from '../run-agent-step'
 import { mockFileContext, MockWebSocket } from './test-utils'
 import { AgentTemplate } from '../templates/types'
 import { handleSpawnAgents } from '../tools/handlers/spawn-agents'
-import { SendSubagentChunk } from '../websockets/messaging'
+import { SendSubagentChunk } from '../tools/handlers/spawn-agents'
 
 // Mock dependencies
 mock.module('../util/logger', () => ({
