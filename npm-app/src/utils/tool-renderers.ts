@@ -369,10 +369,4 @@ export const toolRenderers: Record<ToolName, ToolCallRenderer> = {
       return null
     },
   },
-  add_message: {
-    // Don't render anything
-  },
-  set_messages: {
-    // Don't render anything
-  },
 }
