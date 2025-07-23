@@ -53,6 +53,17 @@ let contentLines: string[] = []
 let currentAgentId: string | null = null
 let lastContentLength = 0
 
+// Chat interface state
+let chatMessages: Array<{
+  role: 'user' | 'assistant'
+  content: string
+  timestamp: number
+}> = []
+let chatInput = ''
+let mockStreamingContent = ''
+let mockStreamingIndex = 0
+let mockStreamingTimer: NodeJS.Timeout | null = null
+
 export function isInSubagentBufferMode(): boolean {
   return isInSubagentBuffer
 }
@@ -107,6 +118,14 @@ export function enterSubagentBuffer(
   contentLines = []
   lastContentLength = 0
 
+  // Reset chat state
+  chatMessages = []
+  chatInput = ''
+  if (mockStreamingTimer) {
+    clearInterval(mockStreamingTimer)
+    mockStreamingTimer = null
+  }
+
   // Enter alternate screen buffer
   process.stdout.write(ENTER_ALT_BUFFER)
   process.stdout.write(CLEAR_SCREEN)
@@ -132,6 +151,14 @@ export function exitSubagentBuffer(rl: any) {
   contentLines = []
   currentAgentId = null
   lastContentLength = 0
+
+  // Reset chat state
+  chatMessages = []
+  chatInput = ''
+  if (mockStreamingTimer) {
+    clearInterval(mockStreamingTimer)
+    mockStreamingTimer = null
+  }
 
   // Restore all original key handlers
   if (originalKeyHandlers.length > 0) {
@@ -208,32 +235,125 @@ function updateSubagentContent() {
   renderSubagentContent()
 }
 
+function startMockStreaming(userMessage: string) {
+  // Mock responses based on user input
+  const responses = [
+    "I understand you're asking about that. Let me think through this step by step...",
+    "That's an interesting question! Based on the codebase context, I can see that...",
+    'Great point! Looking at the current implementation, I notice that we could improve this by...',
+    'Let me analyze the code structure here. It appears that the main issue is...',
+    "I see what you're getting at. The pattern I'm observing suggests that...",
+  ]
+
+  const randomResponse = responses[Math.floor(Math.random() * responses.length)]
+  mockStreamingContent = randomResponse
+  mockStreamingIndex = 0
+
+  // Add assistant message placeholder
+  chatMessages.push({
+    role: 'assistant',
+    content: '',
+    timestamp: Date.now(),
+  })
+
+  // Start streaming simulation
+  mockStreamingTimer = setInterval(() => {
+    if (mockStreamingIndex < mockStreamingContent.length) {
+      const currentMessage = chatMessages[chatMessages.length - 1]
+      if (currentMessage.role === 'assistant') {
+        currentMessage.content += mockStreamingContent[mockStreamingIndex]
+        mockStreamingIndex++
+        renderSubagentContent() // Re-render to show streaming
+      }
+    } else {
+      // Streaming complete
+      if (mockStreamingTimer) {
+        clearInterval(mockStreamingTimer)
+        mockStreamingTimer = null
+      }
+    }
+  }, 50) // 50ms delay between characters for realistic streaming
+}
+
+function renderChatInterface(terminalWidth: number) {
+  // Chat separator
+  process.stdout.write(`\n${gray('─'.repeat(terminalWidth))}\n`)
+
+  // Show last 2 chat messages
+  const recentMessages = chatMessages.slice(-2)
+  const chatLines: string[] = []
+
+  recentMessages.forEach((msg) => {
+    const prefix = msg.role === 'user' ? green('You: ') : cyan('Agent: ')
+    const content = msg.content
+    // Wrap long messages
+    const maxWidth = terminalWidth - 10
+    if (content.length > maxWidth) {
+      const wrapped = wrapLine(content, maxWidth)
+      chatLines.push(prefix + wrapped[0])
+      wrapped.slice(1).forEach((line) => {
+        chatLines.push('      ' + line) // Indent continuation lines
+      })
+    } else {
+      chatLines.push(prefix + content)
+    }
+  })
+
+  // Ensure we have exactly 2 lines for chat history (pad if needed)
+  while (chatLines.length < 2) {
+    chatLines.unshift('') // Add empty lines at the beginning
+  }
+  if (chatLines.length > 2) {
+    chatLines.splice(0, chatLines.length - 2) // Keep only last 2 lines
+  }
+
+  // Display chat history
+  process.stdout.write(chatLines.join('\n'))
+
+  // Chat input line (always visible)
+  const inputPrefix = yellow('> ')
+  const cursor = yellow('█')
+  process.stdout.write(`\n${inputPrefix}${chatInput}${cursor}`)
+}
+
 function renderSubagentContent() {
   // Clear screen and move cursor to top
   process.stdout.write(CLEAR_SCREEN)
 
   const terminalHeight = process.stdout.rows || 24
   const terminalWidth = process.stdout.columns || 80
-  const maxLines = terminalHeight - 2 // Leave space for status line
 
-  const totalLines = contentLines.length
+  // Reserve space for chat interface (5 lines: separator + 3 chat lines + input)
+  const chatInterfaceHeight = 5
+  const maxContentLines = terminalHeight - chatInterfaceHeight - 1 // -1 for status line
 
   // Calculate visible lines based on scroll offset
-  const visibleLines = contentLines.slice(scrollOffset, scrollOffset + maxLines)
+  const visibleLines = contentLines.slice(
+    scrollOffset,
+    scrollOffset + maxContentLines
+  )
 
-  // Display content
+  // Display main content
   process.stdout.write(visibleLines.join('\n'))
 
-  // Add padding to fill remaining space
-  const remainingLines = maxLines - visibleLines.length
-  if (remainingLines > 0) {
-    process.stdout.write('\n'.repeat(remainingLines))
+  // Add padding to fill remaining content space
+  const remainingContentLines = maxContentLines - visibleLines.length
+  if (remainingContentLines > 0) {
+    process.stdout.write('\n'.repeat(remainingContentLines))
   }
 
-  // Display status line at bottom
-  const statusLine = `\n${gray(`Use ↑/↓/PgUp/PgDn to scroll, ESC to go back`)}`
+  // Render chat interface
+  renderChatInterface(terminalWidth)
 
-  process.stdout.write(statusLine)
+  // Display status line at bottom
+  const statusLine = gray(
+    `Type to chat, Enter to send | ↑/↓ to scroll | ESC to go back`
+  )
+
+  process.stdout.write(`\n${statusLine}`)
+
+  // Always show cursor for chat input
+  process.stdout.write(SHOW_CURSOR)
 }
 
 function setupSubagentKeyHandler(rl: any, onExit: () => void) {
@@ -252,8 +372,15 @@ function setupSubagentKeyHandler(rl: any, onExit: () => void) {
 
   process.stdout.on('resize', handleResize)
 
-  // Add our custom handler
+  // Note: Mouse wheel support temporarily disabled to prevent escape sequences in chat
+  // Users can use arrow keys for scrolling instead
+
+  // Add our custom keypress handler
   process.stdin.on('keypress', (str: string, key: any) => {
+    // Filter out mouse events from keypress to prevent them appearing in chat
+    if (str && (str.includes('\x1b[<') || /\d+;\d+;\d+[Mm]/.test(str))) {
+      return // Ignore mouse events in keypress handler
+    }
     if (key && key.name === 'escape') {
       exitSubagentBuffer(rl)
       // Return to subagent list, preserving the current selection
@@ -266,14 +393,47 @@ function setupSubagentKeyHandler(rl: any, onExit: () => void) {
       exitSubagentBuffer(rl)
       onExit()
       return
+    } // Handle chat input (always active)
+    if (key && key.name === 'return') {
+      // Send message
+      if (chatInput.trim()) {
+        chatMessages.push({
+          role: 'user',
+          content: chatInput.trim(),
+          timestamp: Date.now(),
+        })
+
+        const userMessage = chatInput.trim()
+        chatInput = ''
+
+        renderSubagentContent()
+
+        // Start mock streaming response
+        setTimeout(() => startMockStreaming(userMessage), 500)
+      }
+      return
     }
 
-    // Handle scrolling (only when not in chat input mode or using specific scroll keys)
+    if (key && key.name === 'backspace') {
+      chatInput = chatInput.slice(0, -1)
+      renderSubagentContent()
+      return
+    }
+
+    // Add printable characters to chat input (except when using Ctrl for scrolling)
+    if (str && str.length === 1 && str.charCodeAt(0) >= 32 && !key.ctrl) {
+      chatInput += str
+      renderSubagentContent()
+      return
+    }
+
+    // Handle scrolling (use arrow keys for scrolling)
     const terminalHeight = process.stdout.rows || 24
-    const maxLines = terminalHeight - 2
+    const chatInterfaceHeight = 5
+    const maxLines = terminalHeight - chatInterfaceHeight - 1
     const maxScrollOffset = Math.max(0, contentLines.length - maxLines)
 
-    if (key && key.name === 'up' && !key.meta && !key.ctrl) {
+    if (key && key.name === 'up' && !key.ctrl && !key.meta) {
       const newOffset = Math.max(0, scrollOffset - 1)
       if (newOffset !== scrollOffset) {
         scrollOffset = newOffset
@@ -282,7 +442,7 @@ function setupSubagentKeyHandler(rl: any, onExit: () => void) {
       return
     }
 
-    if (key && key.name === 'down' && !key.meta && !key.ctrl) {
+    if (key && key.name === 'down' && !key.ctrl && !key.meta) {
       const newOffset = Math.min(maxScrollOffset, scrollOffset + 1)
       if (newOffset !== scrollOffset) {
         scrollOffset = newOffset
@@ -334,6 +494,8 @@ function setupSubagentKeyHandler(rl: any, onExit: () => void) {
     // Force stdin to be readable to ensure keypress events are captured
     process.stdin.resume()
   }
+
+  // Mouse wheel support disabled to prevent escape sequences in chat input
 }
 
 /**
@@ -352,6 +514,14 @@ export function cleanupSubagentBuffer() {
     process.stdout.write(EXIT_ALT_BUFFER)
     isInSubagentBuffer = false
   }
+
+  // Clean up mock streaming timer
+  if (mockStreamingTimer) {
+    clearInterval(mockStreamingTimer)
+    mockStreamingTimer = null
+  }
+
+  // Mouse reporting was not enabled
 
   // Restore normal terminal mode
   if (process.stdin.isTTY) {
