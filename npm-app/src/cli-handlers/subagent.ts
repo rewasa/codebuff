@@ -47,7 +47,7 @@ function wrapLine(line: string, terminalWidth: number): string[] {
 }
 
 let isInSubagentBuffer = false
-let originalKeyHandler: ((str: string, key: any) => void) | null = null
+let originalKeyHandlers: ((str: string, key: any) => void)[] = []
 let scrollOffset = 0
 let contentLines: string[] = []
 let currentAgentId: string | null = null
@@ -133,11 +133,13 @@ export function exitSubagentBuffer(rl: any) {
   currentAgentId = null
   lastContentLength = 0
 
-  // Restore original key handler
-  if (originalKeyHandler) {
+  // Restore all original key handlers
+  if (originalKeyHandlers.length > 0) {
     process.stdin.removeAllListeners('keypress')
-    process.stdin.on('keypress', originalKeyHandler)
-    originalKeyHandler = null
+    originalKeyHandlers.forEach((handler) => {
+      process.stdin.on('keypress', handler)
+    })
+    originalKeyHandlers = []
   }
 
   // Remove resize listener
@@ -235,11 +237,9 @@ function renderSubagentContent() {
 }
 
 function setupSubagentKeyHandler(rl: any, onExit: () => void) {
-  // Store the original key handler
+  // Store all original key handlers
   const listeners = process.stdin.listeners('keypress')
-  if (listeners.length > 0) {
-    originalKeyHandler = listeners[0] as (str: string, key: any) => void
-  }
+  originalKeyHandlers = listeners as ((str: string, key: any) => void)[]
 
   // Remove existing keypress listeners
   process.stdin.removeAllListeners('keypress')

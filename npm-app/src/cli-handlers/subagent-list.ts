@@ -12,7 +12,7 @@ import {
 } from '../utils/terminal'
 
 let isInSubagentListBuffer = false
-let originalKeyHandler: ((str: string, key: any) => void) | null = null
+let originalKeyHandlers: ((str: string, key: any) => void)[] = []
 let selectedIndex = 0
 let scrollOffset = 0
 let allContentLines: string[] = []
@@ -80,11 +80,13 @@ export function exitSubagentListBuffer(rl: any) {
   subagentLinePositions = []
   subagentList = []
 
-  // Restore original key handler
-  if (originalKeyHandler) {
+  // Restore all original key handlers
+  if (originalKeyHandlers.length > 0) {
     process.stdin.removeAllListeners('keypress')
-    process.stdin.on('keypress', originalKeyHandler)
-    originalKeyHandler = null
+    originalKeyHandlers.forEach((handler) => {
+      process.stdin.on('keypress', handler)
+    })
+    originalKeyHandlers = []
   }
 
   // Exit alternate screen buffer
@@ -322,11 +324,9 @@ function renderSubagentList() {
 }
 
 function setupSubagentListKeyHandler(rl: any, onExit: () => void) {
-  // Store the original key handler
+  // Store all original key handlers
   const listeners = process.stdin.listeners('keypress')
-  if (listeners.length > 0) {
-    originalKeyHandler = listeners[0] as (str: string, key: any) => void
-  }
+  originalKeyHandlers = listeners as ((str: string, key: any) => void)[]
 
   // Remove existing keypress listeners
   process.stdin.removeAllListeners('keypress')
