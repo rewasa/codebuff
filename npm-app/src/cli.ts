@@ -53,6 +53,7 @@ import {
   enterSubagentListBuffer,
   isInSubagentListMode,
   cleanupSubagentListBuffer,
+  resetSubagentSelectionToLast,
 } from './cli-handlers/subagent-list'
 import {
   getAllSubagentIds,
@@ -886,6 +887,8 @@ export class CLI {
         return null
       }
 
+      // Reset selection to last item when entering from main screen
+      resetSubagentSelectionToLast()
       enterSubagentListBuffer(this.rl, () => {
         this.freshPrompt()
       })
@@ -916,6 +919,8 @@ export class CLI {
         this.freshPrompt()
         return null
       }
+      // Reset selection to last item when entering from main screen
+      resetSubagentSelectionToLast()
       const restoreMatch = isCheckpointCommand(cleanInput, 'restore')
       if (restoreMatch) {
         const id = parseInt((restoreMatch as RegExpMatchArray)[1], 10)

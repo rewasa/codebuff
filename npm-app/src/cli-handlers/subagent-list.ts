@@ -13,7 +13,9 @@ import {
 
 let isInSubagentListBuffer = false
 let originalKeyHandlers: ((str: string, key: any) => void)[] = []
-let selectedIndex = 0
+// Make selectedIndex persistent across menu transitions
+// This maintains selection when navigating between subagent list and individual views
+let persistentSelectedIndex = -1 // -1 means not initialized
 let scrollOffset = 0
 let allContentLines: string[] = []
 let subagentLinePositions: number[] = []
@@ -49,8 +51,17 @@ export function enterSubagentListBuffer(rl: any, onExit: () => void) {
     return
   }
 
-  // Select the most recent subagent (last in chronological list)
-  selectedIndex = Math.max(0, subagentList.length - 1)
+  // Initialize selectedIndex: reset to last item when entering from main screen,
+  // or use persistent value if returning from individual subagent view
+  if (
+    persistentSelectedIndex === -1 ||
+    persistentSelectedIndex >= subagentList.length
+  ) {
+    // First time or invalid index - select the most recent subagent (last in chronological list)
+    persistentSelectedIndex = Math.max(0, subagentList.length - 1)
+  }
+  // Use the persistent selected index
+  const selectedIndex = persistentSelectedIndex
 
   // Enter alternate screen buffer
   process.stdout.write(ENTER_ALT_BUFFER)
@@ -73,8 +84,7 @@ export function exitSubagentListBuffer(rl: any) {
     return
   }
 
-  // Reset state
-  selectedIndex = 0
+  // Don't reset persistentSelectedIndex here - keep it for next time
   scrollOffset = 0
   allContentLines = []
   subagentLinePositions = []
@@ -97,6 +107,7 @@ export function exitSubagentListBuffer(rl: any) {
 }
 
 function centerSelectedItem() {
+  const selectedIndex = persistentSelectedIndex
   if (selectedIndex < 0 || selectedIndex >= subagentLinePositions.length) {
     return // Safety check
   }
@@ -129,6 +140,7 @@ function buildAllContentLines() {
   const terminalWidth = process.stdout.columns || 80
   const lines: string[] = []
   subagentLinePositions = [] // Reset before building
+  const selectedIndex = persistentSelectedIndex
 
   if (subagentList.length === 0) {
     lines.push(yellow('No subagents found.'))
@@ -201,7 +213,6 @@ function buildAllContentLines() {
             }
           }
         }
-
         // Add final line
         if (currentLine.trim() !== '' && currentLine !== '  ') {
           allPromptLines.push(currentLine + '"')
@@ -348,8 +359,11 @@ function setupSubagentListKeyHandler(rl: any, onExit: () => void) {
 
     // Handle Enter - select current subagent
     if (key && key.name === 'return') {
-      if (subagentList.length > 0 && selectedIndex < subagentList.length) {
-        const selectedAgent = subagentList[selectedIndex]
+      if (
+        subagentList.length > 0 &&
+        persistentSelectedIndex < subagentList.length
+      ) {
+        const selectedAgent = subagentList[persistentSelectedIndex]
         exitSubagentListBuffer(rl)
 
         // Enter the individual subagent buffer
@@ -360,8 +374,8 @@ function setupSubagentListKeyHandler(rl: any, onExit: () => void) {
 
     // Handle carousel-style navigation - all scroll keys move between items
     if (key && (key.name === 'up' || key.name === 'k')) {
-      if (selectedIndex > 0) {
-        selectedIndex--
+      if (persistentSelectedIndex > 0) {
+        persistentSelectedIndex--
         // Center the selected item
         centerSelectedItem()
         renderSubagentList()
@@ -370,8 +384,8 @@ function setupSubagentListKeyHandler(rl: any, onExit: () => void) {
     }
 
     if (key && (key.name === 'down' || key.name === 'j')) {
-      if (selectedIndex < subagentList.length - 1) {
-        selectedIndex++
+      if (persistentSelectedIndex < subagentList.length - 1) {
+        persistentSelectedIndex++
         // Center the selected item
         centerSelectedItem()
         renderSubagentList()
@@ -380,9 +394,9 @@ function setupSubagentListKeyHandler(rl: any, onExit: () => void) {
     }
 
     if (key && key.name === 'pageup') {
-      const newIndex = Math.max(0, selectedIndex - 5) // Jump 5 items up
-      if (newIndex !== selectedIndex) {
-        selectedIndex = newIndex
+      const newIndex = Math.max(0, persistentSelectedIndex - 5) // Jump 5 items up
+      if (newIndex !== persistentSelectedIndex) {
+        persistentSelectedIndex = newIndex
         centerSelectedItem()
         renderSubagentList()
       }
@@ -390,9 +404,12 @@ function setupSubagentListKeyHandler(rl: any, onExit: () => void) {
     }
 
     if (key && key.name === 'pagedown') {
-      const newIndex = Math.min(subagentList.length - 1, selectedIndex + 5) // Jump 5 items down
-      if (newIndex !== selectedIndex) {
-        selectedIndex = newIndex
+      const newIndex = Math.min(
+        subagentList.length - 1,
+        persistentSelectedIndex + 5
+      ) // Jump 5 items down
+      if (newIndex !== persistentSelectedIndex) {
+        persistentSelectedIndex = newIndex
         centerSelectedItem()
         renderSubagentList()
       }
@@ -400,8 +417,8 @@ function setupSubagentListKeyHandler(rl: any, onExit: () => void) {
     }
 
     if (key && key.name === 'home') {
-      if (selectedIndex !== 0) {
-        selectedIndex = 0
+      if (persistentSelectedIndex !== 0) {
+        persistentSelectedIndex = 0
         centerSelectedItem()
         renderSubagentList()
       }
@@ -409,8 +426,8 @@ function setupSubagentListKeyHandler(rl: any, onExit: () => void) {
     }
 
     if (key && key.name === 'end') {
-      if (selectedIndex !== subagentList.length - 1) {
-        selectedIndex = subagentList.length - 1
+      if (persistentSelectedIndex !== subagentList.length - 1) {
+        persistentSelectedIndex = subagentList.length - 1
         centerSelectedItem()
         renderSubagentList()
       }
@@ -422,6 +439,11 @@ function setupSubagentListKeyHandler(rl: any, onExit: () => void) {
   if (process.stdin.isTTY) {
     process.stdin.setRawMode(true)
   }
+}
+
+// Export function to reset selection to last item (for main screen entry)
+export function resetSubagentSelectionToLast() {
+  persistentSelectedIndex = -1 // This will trigger reset to last item on next entry
 }
 
 // Cleanup function to ensure we exit subagent list buffer on process termination

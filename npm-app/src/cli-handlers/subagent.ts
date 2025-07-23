@@ -256,6 +256,7 @@ function setupSubagentKeyHandler(rl: any, onExit: () => void) {
   process.stdin.on('keypress', (str: string, key: any) => {
     if (key && key.name === 'escape') {
       exitSubagentBuffer(rl)
+      // Return to subagent list, preserving the current selection
       enterSubagentListBuffer(rl, onExit)
       return
     }
