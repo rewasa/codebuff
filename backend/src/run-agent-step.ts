@@ -27,10 +27,8 @@ import { runProgrammaticStep } from './run-programmatic-step'
 import { additionalSystemPrompts } from './system-prompt/prompts'
 import { saveAgentRequest } from './system-prompt/save-agent-request'
 import { agentTemplates } from './templates/agent-list'
-import { processAgentOverrides } from './templates/agent-overrides'
 import { agentRegistry } from './templates/agent-registry'
 import { formatPrompt, getAgentPrompt } from './templates/strings'
-import { AgentTemplate } from './templates/types'
 import { processStreamWithTools } from './tools/stream-parser'
 import { logger } from './util/logger'
 import {
@@ -64,27 +62,6 @@ export interface AgentOptions {
   assistantPrefix: string | undefined
 }
 
-/**
- * Helper function to get agent template with overrides applied
- */
-async function getAgentTemplateWithOverrides(
-  agentType: AgentTemplateType,
-  fileContext: ProjectFileContext
-): Promise<AgentTemplate> {
-  // Initialize registry if needed
-  await agentRegistry.initialize(fileContext)
-
-  const baseTemplate = agentRegistry.getTemplate(agentType)
-  if (!baseTemplate) {
-    const availableTypes = agentRegistry.getAvailableTypes()
-    throw new Error(
-      `Agent template not found for type: ${agentType}. Available types: ${availableTypes.join(', ')}`
-    )
-  }
-
-  return processAgentOverrides(baseTemplate, fileContext)
-}
-
 export const runAgentStep = async (
   ws: WebSocket,
   options: AgentOptions
@@ -116,10 +93,8 @@ export const runAgentStep = async (
   const requestContext = getRequestContext()
   const repoId = requestContext?.processedRepoId
 
-  const agentTemplate = await getAgentTemplateWithOverrides(
-    agentType,
-    fileContext
-  )
+  await agentRegistry.initialize(fileContext)
+  const agentTemplate = agentRegistry.getTemplate(agentType)
   if (!agentTemplate) {
     throw new Error(
       `Agent template not found for type: ${agentType}. Available types: ${Object.keys(agentTemplates).join(', ')}`
@@ -452,24 +427,20 @@ export const runAgentStep = async (
 
   insertTrace(agentResponseTrace)
 
-  const messagesWithResponse = [
-    ...agentMessages,
-    {
-      role: 'assistant' as const,
-      content: fullResponse,
-    },
-  ]
+  const newAgentContext = state.agentContext as AgentState['agentContext']
+  agentState = state.agentState as AgentState
 
-  const newAgentContext = state.mutableState.agentContext
-
-  let finalMessageHistory = expireMessages(messagesWithResponse, 'agentStep')
+  let finalMessageHistoryWithToolResults = expireMessages(
+    state.messages,
+    'agentStep'
+  )
 
   // Handle /compact command: replace message history with the summary
   const wasCompacted =
     prompt &&
     (prompt.toLowerCase() === '/compact' || prompt.toLowerCase() === 'compact')
   if (wasCompacted) {
-    finalMessageHistory = [
+    finalMessageHistoryWithToolResults = [
       {
         role: 'user',
         content: asSystemMessage(
@@ -480,11 +451,6 @@ export const runAgentStep = async (
     logger.debug({ summary: fullResponse }, 'Compacted messages')
   }
 
-  finalMessageHistory.push({
-    role: 'user',
-    content: asSystemMessage(renderToolResults(toolResults)),
-  })
-
   logger.debug(
     {
       iteration: iterationNum,
@@ -494,7 +460,7 @@ export const runAgentStep = async (
       toolCalls,
       toolResults,
       agentContext: newAgentContext,
-      messagesWithResponse,
+      finalMessageHistoryWithToolResults,
       model,
       agentTemplate,
       duration: Date.now() - startTime,
@@ -507,7 +473,7 @@ export const runAgentStep = async (
 
   const newAgentState = {
     ...agentState,
-    messageHistory: finalMessageHistory,
+    messageHistory: finalMessageHistoryWithToolResults,
     stepsRemaining: agentState.stepsRemaining - 1,
     agentContext: newAgentContext,
   }
@@ -552,10 +518,11 @@ export const loopAgentSteps = async (
     fileContext,
     agentType,
   } = options
-  const agentTemplate = await getAgentTemplateWithOverrides(
-    agentType,
-    fileContext
-  )
+  await agentRegistry.initialize(fileContext)
+  const agentTemplate = agentRegistry.getTemplate(agentType)
+  if (!agentTemplate) {
+    throw new Error(`Agent template not found for type: ${agentType}`)
+  }
   const {
     initialAssistantMessage,
     initialAssistantPrefix,

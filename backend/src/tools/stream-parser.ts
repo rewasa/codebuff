@@ -10,6 +10,7 @@ import {
   Subgoal,
   ToolResult,
 } from '@codebuff/common/types/session-state'
+import { buildArray } from '@codebuff/common/util/array'
 import { ProjectFileContext } from '@codebuff/common/util/file'
 import { generateCompactId } from '@codebuff/common/util/string'
 import { ToolCallPart } from 'ai'
@@ -145,11 +146,10 @@ export async function processStreamWithTools<T extends string>(options: {
         ...data,
       })
     },
-    mutableState: {
-      agentState,
-      agentContext,
-      messages,
-    },
+
+    agentState,
+    agentContext,
+    messages,
   }
 
   function toolCallback<T extends ToolName>(
@@ -227,26 +227,30 @@ export async function processStreamWithTools<T extends string>(options: {
             )
           },
           toolCall,
+          getLatestState: () => state,
           state,
         })
 
-        for (const [key, value] of Object.entries(stateUpdate)) {
+        for (const [key, value] of Object.entries(stateUpdate ?? {})) {
           state[key] = value
         }
         previousToolCallFinished = toolResultPromise.then((result) => {
           const toolResult = {
             toolName,
             toolCallId: toolCall.toolCallId,
-            result,
+            result: result as NonNullable<typeof result>,
           }
           logger.debug(
             { toolResult },
             `${toolName} (${toolResult.toolCallId}) tool result for tool`
           )
+          if (result === undefined) {
+            return
+          }
 
           toolResults.push(toolResult)
 
-          state.mutableState.messages.push({
+          state.messages.push({
             role: 'user' as const,
             content: asSystemMessage(renderToolResults([toolResult])),
           })
@@ -274,13 +278,13 @@ export async function processStreamWithTools<T extends string>(options: {
     fullResponse += chunk
   }
 
-  state.mutableState.messages = [
-    ...expireMessages(state.mutableState.messages, 'agentStep'),
-    {
+  state.messages = buildArray<CodebuffMessage>([
+    ...expireMessages(state.messages, 'agentStep'),
+    fullResponse && {
       role: 'assistant' as const,
       content: fullResponse,
     },
-  ]
+  ])
 
   resolveStreamDonePromise()
   await previousToolCallFinished

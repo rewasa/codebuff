@@ -4,6 +4,7 @@ import { type CostMode } from '@codebuff/common/constants'
 import { Command, Option } from 'commander'
 import { red } from 'picocolors'
 
+import { displayLoadedAgents, loadLocalAgents } from './agents/load-agents'
 import { CLI } from './cli'
 import { cliArguments, cliOptions } from './cli-definitions'
 import { npmAppVersion } from './config'
@@ -71,6 +72,7 @@ async function codebuff({
     print,
     trace,
   })
+  await loadLocalAgents({ verbose: true }).then(() => displayLoadedAgents())
   const cli = CLI.getInstance()
 
   await cli.printInitialPrompt({ initialInput, runInitFlow })

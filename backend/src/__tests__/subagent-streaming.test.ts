@@ -104,16 +104,15 @@ describe('Subagent Streaming', () => {
       fileContext: mockFileContext,
       clientSessionId: 'test-session',
       userInputId: 'test-input',
+      getLatestState: () => ({ messages: [] }),
       state: {
         ws,
         fingerprintId: 'test-fingerprint',
         userId: TEST_USER_ID,
         agentTemplate: parentTemplate,
         sendSubagentChunk: mockSendSubagentChunk,
-        mutableState: {
-          messages: [],
-          agentState,
-        },
+        messages: [],
+        agentState,
       },
     })
 
@@ -170,16 +169,15 @@ describe('Subagent Streaming', () => {
       fileContext: mockFileContext,
       clientSessionId: 'test-session',
       userInputId: 'test-input-123',
+      getLatestState: () => ({ messages: [] }),
       state: {
         ws,
         fingerprintId: 'test-fingerprint',
         userId: TEST_USER_ID,
         agentTemplate: parentTemplate,
         sendSubagentChunk: mockSendSubagentChunk,
-        mutableState: {
-          messages: [],
-          agentState,
-        },
+        messages: [],
+        agentState,
       },
     })
     await result

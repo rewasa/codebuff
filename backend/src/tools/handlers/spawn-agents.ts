@@ -29,16 +29,15 @@ export const handleSpawnAgents = ((params: {
   clientSessionId: string
   userInputId: string
 
+  getLatestState: () => { messages: CodebuffMessage[] }
   state: {
     ws?: WebSocket
     fingerprintId?: string
     userId?: string
     agentTemplate?: AgentTemplate
     sendSubagentChunk?: SendSubagentChunk
-    mutableState?: {
-      messages: CodebuffMessage[]
-      agentState: AgentState
-    }
+    messages?: CodebuffMessage[]
+    agentState?: AgentState
   }
 }): { result: Promise<string>; state: {} } => {
   const {
@@ -48,6 +47,7 @@ export const handleSpawnAgents = ((params: {
     fileContext,
     clientSessionId,
     userInputId,
+    getLatestState,
     state,
   } = params
   const { agents } = toolCall.args
@@ -57,8 +57,9 @@ export const handleSpawnAgents = ((params: {
     userId,
     agentTemplate: parentAgentTemplate,
     sendSubagentChunk,
+    messages,
   } = state
-  const mutableState = state.mutableState
+  let { agentState } = state
 
   if (!ws) {
     throw new Error(
@@ -80,12 +81,12 @@ export const handleSpawnAgents = ((params: {
       'Internal error for spawn_agents: Missing sendSubagentChunk in state'
     )
   }
-  if (!mutableState?.messages) {
+  if (!messages) {
     throw new Error(
       'Internal error for spawn_agents: Missing messages in state'
     )
   }
-  if (!mutableState?.agentState) {
+  if (!agentState) {
     throw new Error(
       'Internal error for spawn_agents: Missing agentState in state'
     )
@@ -95,7 +96,7 @@ export const handleSpawnAgents = ((params: {
     const conversationHistoryMessage: CoreMessage = {
       role: 'user',
       content: `For context, the following is the conversation history between the user and an assistant:\n\n${JSON.stringify(
-        mutableState.messages,
+        getLatestState().messages,
         null,
         2
       )}`,
@@ -157,7 +158,7 @@ export const handleSpawnAgents = ((params: {
         }
 
         const agentId = generateCompactId()
-        const agentState: AgentState = {
+        agentState = {
           agentId,
           agentType,
           agentContext: {},
@@ -166,7 +167,7 @@ export const handleSpawnAgents = ((params: {
           stepsRemaining: 20, // MAX_AGENT_STEPS
           report: {},
           // Add parent ID to agent state for communication
-          parentId: mutableState.agentState.agentId,
+          parentId: agentState!.agentId,
         }
 
         // Import loopAgentSteps dynamically to avoid circular dependency
