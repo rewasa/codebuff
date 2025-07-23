@@ -1,77 +1,101 @@
 import { TEST_USER_ID } from '@codebuff/common/constants'
 import { getInitialSessionState } from '@codebuff/common/types/session-state'
-import { beforeEach, describe, expect, it, mock, spyOn } from 'bun:test'
+import {
+  afterAll,
+  beforeAll,
+  beforeEach,
+  describe,
+  expect,
+  it,
+  Mock,
+  mock,
+  spyOn,
+} from 'bun:test'
 import { WebSocket } from 'ws'
 
 import * as runAgentStep from '../run-agent-step'
-import { mockFileContext, MockWebSocket } from './test-utils'
 import { AgentTemplate } from '../templates/types'
-import { handleSpawnAgents } from '../tools/handlers/spawn-agents'
-import { SendSubagentChunk } from '../tools/handlers/spawn-agents'
-
-// Mock dependencies
-mock.module('../util/logger', () => ({
-  logger: {
-    debug: () => {},
-    error: () => {},
-    info: () => {},
-    warn: () => {},
-  },
-  withLoggerContext: async (context: any, fn: () => Promise<any>) => fn(),
-}))
-
-// Mock sendSubagentChunk function to capture streaming messages
-const mockSendSubagentChunk = mock(
-  (data: {
-    userInputId: string
-    agentId: string
-    agentType: string
-    chunk: string
-    prompt?: string
-  }) => {}
-)
-
-// Mock loopAgentSteps to simulate subagent execution with streaming
-const mockLoopAgentSteps = spyOn(
-  runAgentStep,
-  'loopAgentSteps'
-).mockImplementation(async (ws, options) => {
-  // Simulate streaming chunks by calling the callback
-  if (options.onResponseChunk) {
-    options.onResponseChunk('Thinking about the problem...')
-    options.onResponseChunk('Found a solution!')
-  }
-
-  return {
-    agentState: {
-      ...options.agentState,
-      messageHistory: [
-        { role: 'assistant', content: 'Test response from subagent' },
-      ],
-    },
-  }
-})
-
-// Mock agent registry
-mock.module('../templates/agent-registry', () => ({
-  agentRegistry: {
-    initialize: async () => {},
-    getAllTemplates: () => ({
-      thinker: {
-        id: 'thinker',
-        name: 'Thinker',
-        outputMode: 'last_message',
-        promptSchema: { prompt: { safeParse: () => ({ success: true }) } },
-      },
-    }),
-    getAgentName: () => 'Thinker',
-  },
-}))
+import {
+  handleSpawnAgents,
+  SendSubagentChunk,
+} from '../tools/handlers/spawn-agents'
+import { mockFileContext, MockWebSocket } from './test-utils'
 
 describe('Subagent Streaming', () => {
+  let mockLogger: any
+  let mockSendSubagentChunk: Mock<SendSubagentChunk>
+  let mockLoopAgentSteps: Mock<(typeof runAgentStep)['loopAgentSteps']>
+  let mockAgentRegistry: any
+
+  beforeAll(() => {
+    // Mock dependencies
+    mockLogger = mock.module('../util/logger', () => ({
+      logger: {
+        debug: () => {},
+        error: () => {},
+        info: () => {},
+        warn: () => {},
+      },
+      withLoggerContext: async (context: any, fn: () => Promise<any>) => fn(),
+    }))
+
+    // Mock sendSubagentChunk function to capture streaming messages
+    mockSendSubagentChunk = mock(
+      (data: {
+        userInputId: string
+        agentId: string
+        agentType: string
+        chunk: string
+        prompt?: string
+      }) => {}
+    )
+
+    // Mock loopAgentSteps to simulate subagent execution with streaming
+    mockLoopAgentSteps = spyOn(
+      runAgentStep,
+      'loopAgentSteps'
+    ).mockImplementation(async (ws, options) => {
+      // Simulate streaming chunks by calling the callback
+      if (options.onResponseChunk) {
+        options.onResponseChunk('Thinking about the problem...')
+        options.onResponseChunk('Found a solution!')
+      }
+
+      return {
+        agentState: {
+          ...options.agentState,
+          messageHistory: [
+            { role: 'assistant', content: 'Test response from subagent' },
+          ],
+        },
+      }
+    })
+
+    // Mock agent registry
+    mockAgentRegistry = mock.module('../templates/agent-registry', () => ({
+      agentRegistry: {
+        initialize: async () => {},
+        getAllTemplates: () => ({
+          thinker: {
+            id: 'thinker',
+            name: 'Thinker',
+            outputMode: 'last_message',
+            promptSchema: { prompt: { safeParse: () => ({ success: true }) } },
+          },
+        }),
+        getAgentName: () => 'Thinker',
+      },
+    }))
+  })
+
   beforeEach(() => {
     mockSendSubagentChunk.mockClear()
     mockLoopAgentSteps.mockClear()
+  })
+
+  afterAll(() => {
+    mockLogger.restore()
+    mockAgentRegistry.restore()
   })
 
   it('should send subagent-response-chunk messages during agent execution', async () => {
