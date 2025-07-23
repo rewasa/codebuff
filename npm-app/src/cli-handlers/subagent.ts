@@ -63,6 +63,7 @@ let chatInput = ''
 let mockStreamingContent = ''
 let mockStreamingIndex = 0
 let mockStreamingTimer: NodeJS.Timeout | null = null
+let eventLoopKeepAlive: NodeJS.Timeout | null = null
 
 export function isInSubagentBufferMode(): boolean {
   return isInSubagentBuffer
@@ -125,6 +126,10 @@ export function enterSubagentBuffer(
     clearInterval(mockStreamingTimer)
     mockStreamingTimer = null
   }
+  if (eventLoopKeepAlive) {
+    clearInterval(eventLoopKeepAlive)
+    eventLoopKeepAlive = null
+  }
 
   // Enter alternate screen buffer
   process.stdout.write(ENTER_ALT_BUFFER)
@@ -158,6 +163,10 @@ export function exitSubagentBuffer(rl: any) {
   if (mockStreamingTimer) {
     clearInterval(mockStreamingTimer)
     mockStreamingTimer = null
+  }
+  if (eventLoopKeepAlive) {
+    clearInterval(eventLoopKeepAlive)
+    eventLoopKeepAlive = null
   }
 
   // Restore all original key handlers
@@ -256,6 +265,11 @@ function startMockStreaming(userMessage: string) {
     timestamp: Date.now(),
   })
 
+  // Keep event loop active during streaming
+  eventLoopKeepAlive = setInterval(() => {
+    // Empty interval to keep event loop active
+  }, 10)
+
   // Start streaming simulation
   mockStreamingTimer = setInterval(() => {
     if (mockStreamingIndex < mockStreamingContent.length) {
@@ -270,6 +284,10 @@ function startMockStreaming(userMessage: string) {
       if (mockStreamingTimer) {
         clearInterval(mockStreamingTimer)
         mockStreamingTimer = null
+      }
+      if (eventLoopKeepAlive) {
+        clearInterval(eventLoopKeepAlive)
+        eventLoopKeepAlive = null
       }
     }
   }, 50) // 50ms delay between characters for realistic streaming
@@ -519,6 +537,10 @@ export function cleanupSubagentBuffer() {
   if (mockStreamingTimer) {
     clearInterval(mockStreamingTimer)
     mockStreamingTimer = null
+  }
+  if (eventLoopKeepAlive) {
+    clearInterval(eventLoopKeepAlive)
+    eventLoopKeepAlive = null
   }
 
   // Mouse reporting was not enabled
