@@ -128,13 +128,30 @@ function centerSelectedItem() {
 }
 
 // Define header lines as a separate function
-const getHeaderLines = (terminalWidth: number) => [
-  bold(cyan('🤖 ')) + bold(magenta('Subagent History')),
-  gray(`${pluralize(subagentList.length, 'subagent run')} `),
-  '',
-  gray('─'.repeat(terminalWidth)),
-  '',
-]
+const getHeaderLines = (terminalWidth: number) => {
+  // Banner at top
+  const bannerText =
+    'Use ↑/↓/j/k to navigate, PgUp/PgDn for fast scroll, Enter to view | ESC to go back'
+  const bannerPadding = Math.max(
+    0,
+    Math.floor((terminalWidth - bannerText.length) / 2)
+  )
+  const banner =
+    ' '.repeat(bannerPadding) + bannerText + ' '.repeat(bannerPadding)
+  const bannerLine = cyan('═'.repeat(terminalWidth))
+
+  return [
+    bannerLine,
+    bold(banner),
+    bannerLine,
+    '',
+    bold(cyan('🤖 ')) + bold(magenta('Subagent History')),
+    gray(`${pluralize(subagentList.length, 'subagent run')} `),
+    '',
+    gray('─'.repeat(terminalWidth)),
+    '',
+  ]
+}
 
 function buildAllContentLines() {
   const terminalWidth = process.stdout.columns || 80
@@ -327,10 +344,7 @@ function renderSubagentList() {
     process.stdout.write('\n'.repeat(remainingLines))
   }
 
-  // Display status line at bottom
-  const statusLine = `\n${gray(`Use ↑/↓/j/k to navigate, PgUp/PgDn for fast scroll, Enter to view, ESC to go back`)}`
-
-  process.stdout.write(statusLine)
+  // No status line needed since instructions are in banner
   process.stdout.write(HIDE_CURSOR)
 }
 

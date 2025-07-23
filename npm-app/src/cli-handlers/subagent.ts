@@ -135,7 +135,6 @@ export function enterSubagentBuffer(
   process.stdout.write(ENTER_ALT_BUFFER)
   process.stdout.write(CLEAR_SCREEN)
   process.stdout.write(MOVE_CURSOR(1, 1)) // Ensure cursor starts at top-left
-  process.stdout.write(HIDE_CURSOR)
 
   isInSubagentBuffer = true
 
@@ -330,8 +329,7 @@ function renderChatInterface(terminalWidth: number) {
 
   // Chat input line (always visible)
   const inputPrefix = yellow('> ')
-  const cursor = yellow('█')
-  process.stdout.write(`\n${inputPrefix}${chatInput}${cursor}`)
+  process.stdout.write(`\n${inputPrefix}${chatInput}`)
 }
 
 function renderSubagentContent() {
@@ -341,9 +339,25 @@ function renderSubagentContent() {
   const terminalHeight = process.stdout.rows || 24
   const terminalWidth = process.stdout.columns || 80
 
-  // Reserve space for chat interface (5 lines: separator + 3 chat lines + input)
+  // Display banner at top
+  const bannerText =
+    'Type to chat, Enter to send | ↑/↓ to scroll | ESC to go back'
+  const bannerPadding = Math.max(
+    0,
+    Math.floor((terminalWidth - bannerText.length) / 2)
+  )
+  const banner =
+    ' '.repeat(bannerPadding) + bannerText + ' '.repeat(bannerPadding)
+  const bannerLine = cyan('═'.repeat(terminalWidth))
+
+  process.stdout.write(`${bannerLine}\n`)
+  process.stdout.write(`${bold(banner)}\n`)
+  process.stdout.write(`${bannerLine}\n\n`)
+
+  // Reserve space for chat interface (5 lines: separator + 3 chat lines + input) + banner (3 lines)
   const chatInterfaceHeight = 5
-  const maxContentLines = terminalHeight - chatInterfaceHeight - 1 // -1 for status line
+  const bannerHeight = 4 // 3 banner lines + 1 spacing
+  const maxContentLines = terminalHeight - chatInterfaceHeight - bannerHeight
 
   // Calculate visible lines based on scroll offset
   const visibleLines = contentLines.slice(
@@ -362,13 +376,6 @@ function renderSubagentContent() {
 
   // Render chat interface
   renderChatInterface(terminalWidth)
-
-  // Display status line at bottom
-  const statusLine = gray(
-    `Type to chat, Enter to send | ↑/↓ to scroll | ESC to go back`
-  )
-
-  process.stdout.write(`\n${statusLine}`)
 
   // Always show cursor for chat input
   process.stdout.write(SHOW_CURSOR)
