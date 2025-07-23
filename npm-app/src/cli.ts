@@ -42,6 +42,7 @@ import {
 import { handleDiff } from './cli-handlers/diff'
 import { showEasterEgg } from './cli-handlers/easter-egg'
 import { handleInitializationFlowLocally } from './cli-handlers/inititalization-flow'
+import { handleAltBuffer } from './cli-handlers/altbuffer'
 
 import {
   enterSubagentBuffer,
@@ -840,6 +841,14 @@ export class CLI {
       cleanInput === 'codebuffy'
     ) {
       showEasterEgg(this.freshPrompt.bind(this))
+      return null
+    }
+
+    // Handle altbuffer command for testing subagent UI
+    if (cleanInput === 'altbuffer') {
+      handleAltBuffer(this.rl, () => {
+        this.freshPrompt()
+      })
       return null
     }
 

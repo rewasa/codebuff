@@ -193,6 +193,14 @@ export const interactiveCommandDetails: CommandInfo[] = [
   },
 
   {
+    baseCommand: 'altbuffer',
+    description: 'Demo subagent chat UI with mock data',
+    isSlashCommand: true,
+    commandText: '',
+    requireSlash: false,
+  },
+
+  {
     commandText: '"exit" or Ctrl-C x2',
     baseCommand: 'exit',
     description: 'Quit Codebuff',
