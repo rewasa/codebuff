@@ -7,10 +7,7 @@ import * as runAgentStep from '../run-agent-step'
 import { mockFileContext, MockWebSocket } from './test-utils'
 import { AgentTemplate } from '../templates/types'
 import { handleSpawnAgents } from '../tools/handlers/spawn-agents'
-import {
-  createWebSocketMessenger,
-  WebSocketMessenger,
-} from '../websockets/messaging'
+import { SendSubagentChunk } from '../websockets/messaging'
 
 // Mock dependencies
 mock.module('../util/logger', () => ({
@@ -23,7 +20,7 @@ mock.module('../util/logger', () => ({
   withLoggerContext: async (context: any, fn: () => Promise<any>) => fn(),
 }))
 
-// Mock messenger to capture streaming messages
+// Mock sendSubagentChunk function to capture streaming messages
 const mockSendSubagentChunk = mock(
   (data: {
     userInputId: string
@@ -33,10 +30,6 @@ const mockSendSubagentChunk = mock(
     prompt?: string
   }) => {}
 )
-const mockMessenger: WebSocketMessenger = {
-  sendAction: () => {},
-  sendSubagentChunk: mockSendSubagentChunk,
-}
 
 // Mock loopAgentSteps to simulate subagent execution with streaming
 const mockLoopAgentSteps = spyOn(
@@ -116,7 +109,7 @@ describe('Subagent Streaming', () => {
         fingerprintId: 'test-fingerprint',
         userId: TEST_USER_ID,
         agentTemplate: parentTemplate,
-        messenger: mockMessenger,
+        sendSubagentChunk: mockSendSubagentChunk,
         mutableState: {
           messages: [],
           agentState,
@@ -182,7 +175,7 @@ describe('Subagent Streaming', () => {
         fingerprintId: 'test-fingerprint',
         userId: TEST_USER_ID,
         agentTemplate: parentTemplate,
-        messenger: mockMessenger,
+        sendSubagentChunk: mockSendSubagentChunk,
         mutableState: {
           messages: [],
           agentState,

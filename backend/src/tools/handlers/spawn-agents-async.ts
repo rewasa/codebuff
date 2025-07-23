@@ -12,7 +12,7 @@ import { asyncAgentManager } from '../../async-agent-manager'
 import { agentRegistry } from '../../templates/agent-registry'
 import { AgentTemplate } from '../../templates/types'
 import { logger } from '../../util/logger'
-import { WebSocketMessenger } from '../../websockets/messaging'
+import { SendSubagentChunk } from '../../websockets/messaging'
 import { CodebuffToolCall, CodebuffToolHandlerFunction } from '../constants'
 import { handleSpawnAgents } from './spawn-agents'
 
@@ -29,7 +29,7 @@ export const handleSpawnAgentsAsync = ((params: {
     fingerprintId?: string
     userId?: string
     agentTemplate?: AgentTemplate
-    messenger?: WebSocketMessenger
+    sendSubagentChunk?: SendSubagentChunk
     mutableState?: {
       messages: CodebuffMessage[]
       agentState: AgentState
@@ -61,7 +61,7 @@ export const handleSpawnAgentsAsync = ((params: {
     fingerprintId,
     userId,
     agentTemplate: parentAgentTemplate,
-    messenger,
+    sendSubagentChunk,
   } = state
   const mutableState = state.mutableState
 
@@ -90,9 +90,9 @@ export const handleSpawnAgentsAsync = ((params: {
       'Internal error for spawn_agents: Missing agentState in state'
     )
   }
-  if (!messenger) {
+  if (!sendSubagentChunk) {
     throw new Error(
-      'Internal error for spawn_agents_async: Missing messenger in state'
+      'Internal error for spawn_agents_async: Missing sendSubagentChunk in state'
     )
   }
 
@@ -195,16 +195,14 @@ export const handleSpawnAgentsAsync = ((params: {
               toolResults: [],
               userId,
               clientSessionId,
-              onResponseChunk: (chunk: string) => {
-                // Send subagent streaming chunks to client
-                messenger.sendSubagentChunk({
+              onResponseChunk: (chunk: string) =>
+                sendSubagentChunk({
                   userInputId,
                   agentId,
                   agentType,
                   chunk,
                   prompt,
-                })
-              },
+                }),
             })
 
             // Send completion message to parent if agent has appropriate output mode

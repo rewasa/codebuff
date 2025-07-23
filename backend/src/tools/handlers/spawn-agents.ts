@@ -10,7 +10,7 @@ import { WebSocket } from 'ws'
 import { agentRegistry } from '../../templates/agent-registry'
 import { AgentTemplate } from '../../templates/types'
 import { logger } from '../../util/logger'
-import { WebSocketMessenger } from '../../websockets/messaging'
+import { SendSubagentChunk } from '../../websockets/messaging'
 import { CodebuffToolCall, CodebuffToolHandlerFunction } from '../constants'
 
 export const handleSpawnAgents = ((params: {
@@ -26,7 +26,7 @@ export const handleSpawnAgents = ((params: {
     fingerprintId?: string
     userId?: string
     agentTemplate?: AgentTemplate
-    messenger?: WebSocketMessenger
+    sendSubagentChunk?: SendSubagentChunk
     mutableState?: {
       messages: CodebuffMessage[]
       agentState: AgentState
@@ -48,7 +48,7 @@ export const handleSpawnAgents = ((params: {
     fingerprintId,
     userId,
     agentTemplate: parentAgentTemplate,
-    messenger,
+    sendSubagentChunk,
   } = state
   const mutableState = state.mutableState
 
@@ -67,9 +67,9 @@ export const handleSpawnAgents = ((params: {
       'Internal error for spawn_agents: Missing agentTemplate in state'
     )
   }
-  if (!messenger) {
+  if (!sendSubagentChunk) {
     throw new Error(
-      'Internal error for spawn_agents: Missing messenger in state'
+      'Internal error for spawn_agents: Missing sendSubagentChunk in state'
     )
   }
   if (!mutableState?.messages) {
@@ -177,7 +177,7 @@ export const handleSpawnAgents = ((params: {
           clientSessionId,
           onResponseChunk: (chunk: string) => {
             // Send subagent streaming chunks to client
-            messenger.sendSubagentChunk({
+            sendSubagentChunk({
               userInputId,
               agentId,
               agentType,

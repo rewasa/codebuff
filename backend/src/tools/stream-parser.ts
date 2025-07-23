@@ -21,7 +21,7 @@ import { toolParams } from '../tools'
 import { logger } from '../util/logger'
 import { asSystemMessage, expireMessages } from '../util/messages'
 import { requestToolCall } from '../websockets/websocket-action'
-import { createWebSocketMessenger } from '../websockets/messaging'
+import { sendAction } from '../websockets/websocket-action'
 import { processStreamWithTags } from '../xml-stream-parser'
 import {
   ClientToolCall,
@@ -133,7 +133,18 @@ export async function processStreamWithTools<T extends string>(options: {
     userId,
     repoId,
     agentTemplate,
-    messenger: createWebSocketMessenger(ws),
+    sendSubagentChunk: (data: {
+      userInputId: string
+      agentId: string
+      agentType: string
+      chunk: string
+      prompt?: string
+    }) => {
+      sendAction(ws, {
+        type: 'subagent-response-chunk',
+        ...data,
+      })
+    },
     mutableState: {
       agentState,
       agentContext,
