@@ -64,6 +64,10 @@ let mockStreamingContent = ''
 let mockStreamingIndex = 0
 let mockStreamingTimer: NodeJS.Timeout | null = null
 let eventLoopKeepAlive: NodeJS.Timeout | null = null
+let isStreaming = false
+let streamingUpdateBuffer: string = ''
+let streamingUpdateTimer: NodeJS.Timeout | null = null
+let userHasManuallyScrolled = false
 
 export function isInSubagentBufferMode(): boolean {
   return isInSubagentBuffer
@@ -130,6 +134,13 @@ export function enterSubagentBuffer(
     clearInterval(eventLoopKeepAlive)
     eventLoopKeepAlive = null
   }
+  if (streamingUpdateTimer) {
+    clearTimeout(streamingUpdateTimer)
+    streamingUpdateTimer = null
+  }
+  isStreaming = false
+  streamingUpdateBuffer = ''
+  userHasManuallyScrolled = false
 
   // Enter alternate screen buffer
   process.stdout.write(ENTER_ALT_BUFFER)
@@ -137,6 +148,7 @@ export function enterSubagentBuffer(
   process.stdout.write(MOVE_CURSOR(1, 1)) // Ensure cursor starts at top-left
 
   isInSubagentBuffer = true
+  needsFullRender = true // Force full render on entry
 
   // Display subagent content
   updateSubagentContent()
@@ -167,6 +179,13 @@ export function exitSubagentBuffer(rl: any) {
     clearInterval(eventLoopKeepAlive)
     eventLoopKeepAlive = null
   }
+  if (streamingUpdateTimer) {
+    clearTimeout(streamingUpdateTimer)
+    streamingUpdateTimer = null
+  }
+  isStreaming = false
+  streamingUpdateBuffer = ''
+  userHasManuallyScrolled = false
 
   // Restore all original key handlers
   if (originalKeyHandlers.length > 0) {
@@ -270,10 +289,8 @@ function updateSubagentContent() {
 
   // Only reset scroll when entering a new subagent view (not when chat updates)
   if (chatMessages.length === 0) {
-    scrollOffset = 0
-  }
-
-  renderSubagentContent()
+    scrollOffset = 0        }
+        renderSubagentContent()
 }
 
 function startMockStreaming(userMessage: string) {
@@ -505,6 +522,9 @@ Would you like me to implement any specific part of this solution first?`,
     timestamp: Date.now(),
   })
 
+  isStreaming = true
+  streamingUpdateBuffer = ''
+
   // Keep event loop active during streaming
   eventLoopKeepAlive = setInterval(() => {
     // Empty interval to keep event loop active
@@ -516,20 +536,15 @@ Would you like me to implement any specific part of this solution first?`,
       const currentMessage = chatMessages[chatMessages.length - 1]
       if (currentMessage.role === 'assistant') {
         currentMessage.content += mockStreamingContent[mockStreamingIndex]
+        streamingUpdateBuffer += mockStreamingContent[mockStreamingIndex]
         mockStreamingIndex++
 
-        // Check if user is at bottom before updating content
-        const wasAtBottom = isScrolledToBottom()
-
-        updateSubagentContent() // Update content to rebuild lines with new text
-
-        // Only auto-scroll if user was already at bottom
-        if (wasAtBottom) {
-          scrollToBottom()
-        }
+        // Buffer updates and render less frequently during streaming
+        scheduleStreamingUpdate()
       }
     } else {
       // Streaming complete
+      isStreaming = false
       if (mockStreamingTimer) {
         clearInterval(mockStreamingTimer)
         mockStreamingTimer = null
@@ -538,105 +553,272 @@ Would you like me to implement any specific part of this solution first?`,
         clearInterval(eventLoopKeepAlive)
         eventLoopKeepAlive = null
       }
+      if (streamingUpdateTimer) {
+        clearTimeout(streamingUpdateTimer)
+        streamingUpdateTimer = null
+      }
 
-      // Scroll to bottom when streaming completes to show full response
-      scrollToBottom()
+      // Final update with complete content
+      updateSubagentContent()
+
+      // Only auto-scroll to bottom if user hasn't manually scrolled away
+      if (!userHasManuallyScrolled) {
+        scrollToBottom()
+      }
     }
   }, 25) // 25ms delay between characters for realistic streaming of longer content
 }
 function isScrolledToBottom(): boolean {
-  // Calculate if user is currently at the bottom of content
-  const terminalHeight = process.stdout.rows || 24
-  const bannerHeight = 4
-  const chatInputHeight = 3
-  const maxLines = terminalHeight - bannerHeight - chatInputHeight
-  const maxScrollOffset = Math.max(0, contentLines.length - maxLines)
-
+  const { maxScrollOffset } = getLayoutDimensions()
   // Consider "at bottom" if within 2 lines of the actual bottom
   return scrollOffset >= maxScrollOffset - 2
 }
 
 function scrollToBottom() {
-  // Calculate the maximum scroll offset to show the bottom of content
-  const terminalHeight = process.stdout.rows || 24
-  const bannerHeight = 4
-  const chatInputHeight = 3
-  const maxLines = terminalHeight - bannerHeight - chatInputHeight
-  const maxScrollOffset = Math.max(0, contentLines.length - maxLines)
-
+  const { maxScrollOffset } = getLayoutDimensions()
   // Set scroll to bottom
   scrollOffset = maxScrollOffset
 }
 
-function renderChatInput(terminalWidth: number) {
-  // Chat input separator and input line
+function buildChatInputBuffer(
+  terminalWidth: number,
+  terminalHeight: number
+): string {
+  const separatorRow = terminalHeight - 2
+  const inputRow = terminalHeight - 1
   const isAtBottom = isScrolledToBottom()
 
+  let inputBuffer = ''
+
+  // Build separator line at fixed position
+  inputBuffer += `\x1b[${separatorRow};1H\x1b[K`
+
   if (isAtBottom) {
-    // Normal separator line when at bottom
-    process.stdout.write(`\n${gray('─'.repeat(terminalWidth))}\n`)
+    const separatorLine = gray('─'.repeat(terminalWidth))
+    inputBuffer += separatorLine
   } else {
-    // Show indicator when not at bottom
     const indicator = ' ↓ messages below ↓ '
-    const separatorLength = Math.max(0, terminalWidth - indicator.length)
+    const indicatorWidth = stringWidth(indicator)
+    const separatorLength = Math.max(0, terminalWidth - indicatorWidth)
     const leftSeparator = '─'.repeat(Math.floor(separatorLength / 2))
     const rightSeparator = '─'.repeat(Math.ceil(separatorLength / 2))
     const separatorLine =
       gray(leftSeparator) + yellow(indicator) + gray(rightSeparator)
-    process.stdout.write(`\n${separatorLine}\n`)
+    inputBuffer += separatorLine
   }
 
+  // Build input line at fixed position
+  inputBuffer += `\x1b[${inputRow};1H\x1b[K`
+
   const inputPrefix = yellow('> ')
-  process.stdout.write(`${inputPrefix}${chatInput}`)
+  const inputPrefixWidth = stringWidth(inputPrefix)
+  const maxInputWidth = terminalWidth - inputPrefixWidth
+
+  let displayInput = chatInput
+  if (stringWidth(chatInput) > maxInputWidth) {
+    while (
+      stringWidth(displayInput + '...') > maxInputWidth &&
+      displayInput.length > 0
+    ) {
+      displayInput = displayInput.slice(0, -1)
+    }
+    displayInput += '...'
+  }
+
+  inputBuffer += `${inputPrefix}${displayInput}`
+
+  // Position cursor at end of input
+  const cursorCol = inputPrefixWidth + stringWidth(displayInput) + 1
+  inputBuffer += `\x1b[${inputRow};${cursorCol}H`
+
+  return inputBuffer
+}
+
+// Track what was last rendered to enable selective updates
+let lastRenderedContent: string[] = []
+let lastScrollOffset = -1
+let needsFullRender = true
+
+// Batched rendering system to reduce stdout writes
+let renderBuffer: string = ''
+let pendingRender: NodeJS.Timeout | null = null
+const RENDER_DEBOUNCE_MS = 4 // Minimal debounce for responsive input
+
+function flushRenderBuffer() {
+  if (renderBuffer) {
+    process.stdout.write(renderBuffer)
+    renderBuffer = ''
+  }
+  pendingRender = null
+}
+
+function scheduleRender() {
+  if (pendingRender) return
+  pendingRender = setTimeout(flushRenderBuffer, RENDER_DEBOUNCE_MS)
+}
+
+function addToRenderBuffer(content: string) {
+  renderBuffer += content
+  scheduleRender()
+}
+
+function immediateRender(content: string) {
+  if (pendingRender) {
+    clearTimeout(pendingRender)
+    pendingRender = null
+  }
+  process.stdout.write(renderBuffer + content)
+  renderBuffer = ''
+}
+
+function getLayoutDimensions() {
+  const terminalHeight = process.stdout.rows || 24
+  const terminalWidth = process.stdout.columns || 80
+  const bannerHeight = 4
+  const chatInputHeight = 2 // Fixed: separator + input only
+  const maxLines = terminalHeight - bannerHeight - chatInputHeight
+  const maxScrollOffset = Math.max(0, contentLines.length - maxLines)
+
+  return {
+    terminalHeight,
+    terminalWidth,
+    bannerHeight,
+    chatInputHeight,
+    maxLines,
+    maxScrollOffset,
+  }
+}
+
+function scheduleStreamingUpdate() {
+  if (streamingUpdateTimer) return // Already scheduled
+
+  streamingUpdateTimer = setTimeout(() => {
+    streamingUpdateTimer = null
+
+    // Check if user is at bottom before updating content
+    const wasAtBottom = isScrolledToBottom()
+
+    // Update content with buffered changes
+    updateSubagentContent()
+
+    // Only auto-scroll if user was already at bottom
+    if (wasAtBottom) {
+      scrollToBottom()
+    }
+
+    streamingUpdateBuffer = ''
+  }, 100) // Update every 100ms during streaming instead of every character
 }
 
 function renderSubagentContent() {
+  const layout = getLayoutDimensions()
+  const { terminalHeight, terminalWidth, maxLines } = layout
+  const visibleLines = contentLines.slice(scrollOffset, scrollOffset + maxLines)
+
+  // Force full render on first load or terminal resize
+  if (needsFullRender || terminalWidth !== (process.stdout.columns || 80)) {
+    renderFullScreen(layout, visibleLines)
+    needsFullRender = false
+    lastRenderedContent = [...visibleLines]
+    lastScrollOffset = scrollOffset
+    return
+  }
+
+  // Selective rendering based on what changed
+  if (scrollOffset !== lastScrollOffset) {
+    renderContentArea(layout, visibleLines)
+    lastRenderedContent = [...visibleLines]
+    lastScrollOffset = scrollOffset
+    // Update chat input to show correct scroll indicator
+    renderChatInputOnly()
+  } else if (
+    JSON.stringify(visibleLines) !== JSON.stringify(lastRenderedContent)
+  ) {
+    // Content changed (streaming updates)
+    renderContentArea(layout, visibleLines)
+    lastRenderedContent = [...visibleLines]
+  }
+}
+
+function renderFullScreen(layout: any, visibleLines: string[]) {
+  const { terminalHeight, terminalWidth } = layout
+
+  // Build entire screen in memory first, then write once
+  let screenBuffer = ''
+
   // Clear screen and move cursor to top
-  process.stdout.write(CLEAR_SCREEN)
+  screenBuffer += CLEAR_SCREEN + '\x1b[1;1H'
 
-  const terminalHeight = process.stdout.rows || 24
-  const terminalWidth = process.stdout.columns || 80
-
-  // Display banner at top
+  // Render banner at fixed position (rows 1-3)
   const bannerText =
     'Type to chat, Enter to send | ↑/↓ to scroll | ESC to go back'
+  const bannerTextWidth = stringWidth(bannerText)
   const bannerPadding = Math.max(
     0,
-    Math.floor((terminalWidth - bannerText.length) / 2)
+    Math.floor((terminalWidth - bannerTextWidth) / 2)
   )
   const banner =
     ' '.repeat(bannerPadding) + bannerText + ' '.repeat(bannerPadding)
   const bannerLine = cyan('═'.repeat(terminalWidth))
 
-  process.stdout.write(`${bannerLine}\n`)
-  process.stdout.write(`${bold(banner)}\n`)
-  process.stdout.write(`${bannerLine}\n\n`)
+  screenBuffer += '\x1b[1;1H\x1b[K' + bannerLine
+  screenBuffer += '\x1b[2;1H\x1b[K' + bold(banner)
+  screenBuffer += '\x1b[3;1H\x1b[K' + bannerLine
 
-  // Reserve space for banner (4 lines) + chat input (3 lines)
-  const bannerHeight = 4 // 3 banner lines + 1 spacing
-  const chatInputHeight = 3 // separator + input + padding
-  const maxContentLines = terminalHeight - bannerHeight - chatInputHeight
+  // Render content area
+  const contentStartRow = 5
+  const contentEndRow = terminalHeight - 3
 
-  // Calculate visible lines based on scroll offset
-  const visibleLines = contentLines.slice(
-    scrollOffset,
-    scrollOffset + maxContentLines
-  )
+  for (let row = contentStartRow; row <= contentEndRow; row++) {
+    const contentIndex = row - contentStartRow
+    screenBuffer += `\x1b[${row};1H\x1b[K`
 
-  // Display main content (now includes chat history)
-  process.stdout.write(visibleLines.join('\n'))
-
-  // Add padding to fill remaining content space
-  const remainingContentLines = maxContentLines - visibleLines.length
-  if (remainingContentLines > 0) {
-    process.stdout.write('\n'.repeat(remainingContentLines))
+    if (contentIndex < visibleLines.length) {
+      screenBuffer += visibleLines[contentIndex]
+    }
   }
 
-  // Render chat input at bottom
-  renderChatInput(terminalWidth)
+  // Render chat input
+  screenBuffer += buildChatInputBuffer(terminalWidth, terminalHeight)
+  screenBuffer += '\x1b[?25h' // Show cursor at final position
 
-  // Always show cursor for chat input
-  process.stdout.write(SHOW_CURSOR)
+  // Single write for entire screen
+  immediateRender(screenBuffer)
+}
+
+function renderContentArea(layout: any, visibleLines: string[]) {
+  const { terminalHeight } = layout
+  const contentStartRow = 5
+  const contentEndRow = terminalHeight - 3
+
+  // Build content area in buffer, then write once
+  let contentBuffer = ''
+  for (let row = contentStartRow; row <= contentEndRow; row++) {
+    const contentIndex = row - contentStartRow
+    contentBuffer += `\x1b[${row};1H\x1b[K`
+
+    if (contentIndex < visibleLines.length) {
+      contentBuffer += visibleLines[contentIndex]
+    }
+  }
+
+  addToRenderBuffer(contentBuffer)
+}
+
+function renderChatInputOnly(options: { immediate?: boolean } = {}) {
+  const layout = getLayoutDimensions()
+  const { terminalHeight, terminalWidth } = layout
+
+  // Build chat input buffer
+  const inputBuffer = buildChatInputBuffer(terminalWidth, terminalHeight)
+
+  if (options.immediate) {
+    // Immediate render for responsive typing
+    immediateRender(inputBuffer + '\x1b[?25h')
+  } else {
+    // Buffered render for other updates
+    addToRenderBuffer(inputBuffer + '\x1b[?25h')
+  }
 }
 
 function setupSubagentKeyHandler(rl: any, onExit: () => void) {
@@ -649,7 +831,8 @@ function setupSubagentKeyHandler(rl: any, onExit: () => void) {
 
   // Handle terminal resize
   const handleResize = () => {
-    // Recalculate content with new terminal dimensions
+    // Force full render on resize
+    needsFullRender = true
     updateSubagentContent()
   }
 
@@ -692,6 +875,9 @@ function setupSubagentKeyHandler(rl: any, onExit: () => void) {
         // Update content to include the new user message
         updateSubagentContent()
 
+        // Re-render the chat input to show it's cleared
+        renderChatInputOnly({ immediate: true })
+
         // Auto-scroll to bottom to show the new message
         scrollToBottom()
 
@@ -703,28 +889,25 @@ function setupSubagentKeyHandler(rl: any, onExit: () => void) {
 
     if (key && key.name === 'backspace') {
       chatInput = chatInput.slice(0, -1)
-      renderSubagentContent()
+      renderChatInputOnly({ immediate: true }) // Immediate render for responsive typing
       return
     }
 
     // Add printable characters to chat input (except when using Ctrl for scrolling)
     if (str && str.length === 1 && str.charCodeAt(0) >= 32 && !key.ctrl) {
       chatInput += str
-      renderSubagentContent()
+      renderChatInputOnly({ immediate: true }) // Immediate render for responsive typing
       return
     }
 
     // Handle scrolling (use arrow keys for scrolling)
-    const terminalHeight = process.stdout.rows || 24
-    const bannerHeight = 4
-    const chatInputHeight = 3
-    const maxLines = terminalHeight - bannerHeight - chatInputHeight
-    const maxScrollOffset = Math.max(0, contentLines.length - maxLines)
+    const { maxLines, maxScrollOffset } = getLayoutDimensions()
 
     if (key && key.name === 'up' && !key.ctrl && !key.meta) {
       const newOffset = Math.max(0, scrollOffset - 1)
       if (newOffset !== scrollOffset) {
         scrollOffset = newOffset
+        userHasManuallyScrolled = true // Mark as manually scrolled
         renderSubagentContent()
       }
       return
@@ -734,6 +917,12 @@ function setupSubagentKeyHandler(rl: any, onExit: () => void) {
       const newOffset = Math.min(maxScrollOffset, scrollOffset + 1)
       if (newOffset !== scrollOffset) {
         scrollOffset = newOffset
+        // Reset manual scroll flag if user scrolls back to bottom
+        if (newOffset >= maxScrollOffset) {
+          userHasManuallyScrolled = false
+        } else {
+          userHasManuallyScrolled = true
+        }
         renderSubagentContent()
       }
       return
@@ -743,6 +932,7 @@ function setupSubagentKeyHandler(rl: any, onExit: () => void) {
       const newOffset = Math.max(0, scrollOffset - maxLines)
       if (newOffset !== scrollOffset) {
         scrollOffset = newOffset
+        userHasManuallyScrolled = true // Mark as manually scrolled
         renderSubagentContent()
       }
       return
@@ -752,6 +942,12 @@ function setupSubagentKeyHandler(rl: any, onExit: () => void) {
       const newOffset = Math.min(maxScrollOffset, scrollOffset + maxLines)
       if (newOffset !== scrollOffset) {
         scrollOffset = newOffset
+        // Reset manual scroll flag if user scrolls back to bottom
+        if (newOffset >= maxScrollOffset) {
+          userHasManuallyScrolled = false
+        } else {
+          userHasManuallyScrolled = true
+        }
         renderSubagentContent()
       }
       return
@@ -760,6 +956,7 @@ function setupSubagentKeyHandler(rl: any, onExit: () => void) {
     if (key && key.name === 'home') {
       if (scrollOffset !== 0) {
         scrollOffset = 0
+        userHasManuallyScrolled = true // Mark as manually scrolled
         renderSubagentContent()
       }
       return
@@ -768,6 +965,7 @@ function setupSubagentKeyHandler(rl: any, onExit: () => void) {
     if (key && key.name === 'end') {
       if (scrollOffset !== maxScrollOffset) {
         scrollOffset = maxScrollOffset
+        userHasManuallyScrolled = false // Reset when going to bottom
         renderSubagentContent()
       }
       return
@@ -812,6 +1010,27 @@ export function cleanupSubagentBuffer() {
     clearInterval(eventLoopKeepAlive)
     eventLoopKeepAlive = null
   }
+  if (streamingUpdateTimer) {
+    clearTimeout(streamingUpdateTimer)
+    streamingUpdateTimer = null
+  }
+  isStreaming = false
+  streamingUpdateBuffer = ''
+  userHasManuallyScrolled = false
+  if (streamingUpdateTimer) {
+    clearTimeout(streamingUpdateTimer)
+    streamingUpdateTimer = null
+  }
+
+  // Clean up render buffer
+  if (pendingRender) {
+    clearTimeout(pendingRender)
+    pendingRender = null
+  }
+  renderBuffer = ''
+  isStreaming = false
+  streamingUpdateBuffer = ''
+  userHasManuallyScrolled = false
 
   // Mouse reporting was not enabled
 
