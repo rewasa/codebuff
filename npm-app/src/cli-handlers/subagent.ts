@@ -73,6 +73,10 @@ let needsFullRender = false
 // Fake cursor state
 let fakeCursorVisible = true
 let fakeCursorTimer: NodeJS.Timeout | null = null
+let previousInputHeight = 2 // Track previous input area height for proper clearing
+let lastInputTime = 0 // Track when user last typed
+let inputPauseTimer: NodeJS.Timeout | null = null
+const INPUT_PAUSE_DELAY = 3000 // 3 seconds before starting to blink
 
 // Performance optimization: cache wrapped content
 let wrappedContentCache: string[] = []
@@ -148,12 +152,13 @@ export function enterSubagentBuffer(
   cleanupTimers()
   isStreaming = false
   streamingUpdateBuffer = ''
-  userHasManuallyScrolled = false
-
-  // Reset performance caches
+  userHasManuallyScrolled = false // Reset performance caches
   wrappedContentCache = []
   lastTerminalWidth = 0
   lastContentHash = ''
+
+  // Reset input height tracking
+  previousInputHeight = 2
 
   // Stop fake cursor
   stopFakeCursorBlinking()
@@ -167,13 +172,13 @@ export function enterSubagentBuffer(
   needsFullRender = true // Force full render on entry
 
   // Display subagent content
-  updateSubagentContent()
-
-  // Set up key handler for ESC to exit
+  updateSubagentContent()  // Set up key handler for ESC to exit
   setupSubagentKeyHandler(rl, onExit)
-
-  // Start fake cursor blinking
-  startFakeCursorBlinking()
+  
+  // Initialize cursor (visible, no blinking until pause)
+  fakeCursorVisible = true
+  lastInputTime = Date.now()
+  onUserInput() // Start the pause timer
 }
 
 export function exitSubagentBuffer(rl: any) {
@@ -193,12 +198,13 @@ export function exitSubagentBuffer(rl: any) {
   cleanupTimers()
   isStreaming = false
   streamingUpdateBuffer = ''
-  userHasManuallyScrolled = false
-
-  // Reset performance caches
+  userHasManuallyScrolled = false // Reset performance caches
   wrappedContentCache = []
   lastTerminalWidth = 0
   lastContentHash = ''
+
+  // Reset input height tracking
+  previousInputHeight = 2
 
   // Stop fake cursor
   stopFakeCursorBlinking()
@@ -356,6 +362,10 @@ function cleanupTimers() {
     clearTimeout(fakeCursorTimer)
     fakeCursorTimer = null
   }
+  if (inputPauseTimer) {
+    clearTimeout(inputPauseTimer)
+    inputPauseTimer = null
+  }
 }
 
 function startMockStreaming(userMessage: string) {
@@ -440,11 +450,8 @@ This approach provides a clean interface and makes the functionality easily exte
       cleanupTimers()
 
       // Final update with complete content
-      updateSubagentContent()
-
-      // Restart fake cursor blinking
-      startFakeCursorBlinking()
-      renderChatInputOnly({ immediate: true })
+      updateSubagentContent()        // Reset cursor state after streaming
+        onUserInput()
 
       // Only auto-scroll to bottom if user hasn't manually scrolled away
       if (!userHasManuallyScrolled) {
@@ -479,29 +486,49 @@ function getCursorBlinkTiming() {
       invisibleDuration: 400,
     }
   }
-}
-
-function startFakeCursorBlinking() {
+}function startFakeCursorBlinking() {
   if (fakeCursorTimer) {
     clearTimeout(fakeCursorTimer)
   }
-
+  
   fakeCursorVisible = true
-
+  
   function scheduleNextBlink() {
     const timing = getCursorBlinkTiming()
-    const nextDelay = fakeCursorVisible
-      ? timing.visibleDuration
-      : timing.invisibleDuration
-
+    const nextDelay = fakeCursorVisible ? timing.visibleDuration : timing.invisibleDuration
+    
     fakeCursorTimer = setTimeout(() => {
       fakeCursorVisible = !fakeCursorVisible
       renderChatInputOnly({ immediate: true })
       scheduleNextBlink()
     }, nextDelay)
   }
-
+  
   scheduleNextBlink()
+}
+
+function onUserInput() {
+  lastInputTime = Date.now()
+  
+  // Stop current blinking and show cursor
+  stopFakeCursorBlinking()
+  fakeCursorVisible = true
+  
+  // Clear any existing pause timer
+  if (inputPauseTimer) {
+    clearTimeout(inputPauseTimer)
+  }
+  
+  // Start new pause timer
+  inputPauseTimer = setTimeout(() => {
+    // Only start blinking if user hasn't typed recently
+    if (Date.now() - lastInputTime >= INPUT_PAUSE_DELAY) {
+      startFakeCursorBlinking()
+    }
+  }, INPUT_PAUSE_DELAY)
+  
+  // Render immediately to show cursor
+  renderChatInputOnly({ immediate: true })
 }
 
 function stopFakeCursorBlinking() {
@@ -515,15 +542,30 @@ function buildChatInputBuffer(
   terminalWidth: number,
   terminalHeight: number
 ): string {
-  const separatorRow = terminalHeight - 2
-  const inputRow = terminalHeight - 1
+  const layout = getLayoutDimensions()
+  const { chatInputHeight, inputLines } = layout
+  const separatorRow = terminalHeight - chatInputHeight
   const isAtBottom = isScrolledToBottom()
 
   let inputBuffer = ''
 
-  // Build separator line at fixed position
-  inputBuffer += `\x1b[${separatorRow};1H\x1b[K`
+  // Always hide the real cursor
+  inputBuffer += '\x1b[?25l'
 
+  // Clear the entire input area, including any previous larger area
+  const maxHeightToClear = Math.max(chatInputHeight, previousInputHeight)
+  const startClearRow = terminalHeight - maxHeightToClear
+
+  for (let i = 0; i < maxHeightToClear; i++) {
+    const row = startClearRow + i
+    inputBuffer += `\x1b[${row};1H\x1b[K`
+  }
+
+  // Update previous height for next render
+  previousInputHeight = chatInputHeight
+
+  // Build separator line
+  inputBuffer += `\x1b[${separatorRow};1H`
   if (isAtBottom) {
     const separatorLine = gray('─'.repeat(terminalWidth))
     inputBuffer += separatorLine
@@ -538,9 +580,6 @@ function buildChatInputBuffer(
     inputBuffer += separatorLine
   }
 
-  // Always hide the real cursor
-  inputBuffer += '\x1b[?25l'
-
   // Build input with fake cursor
   const inputPrefix = yellow('> ')
   const inputPrefixWidth = stringWidth(inputPrefix)
@@ -552,14 +591,7 @@ function buildChatInputBuffer(
 
   // Handle multi-line wrapping
   const wrappedLines = wrapLine(inputWithCursor, maxInputWidth)
-  const totalLines = wrappedLines.length
-  const startRow = Math.max(inputRow - totalLines + 1, separatorRow + 1)
-
-  // Clear the input area (might span multiple lines)
-  for (let i = 0; i < totalLines; i++) {
-    const row = startRow + i
-    inputBuffer += `\x1b[${row};1H\x1b[K`
-  }
+  const startRow = separatorRow + 1
 
   // Render each line of wrapped input
   wrappedLines.forEach((line, index) => {
@@ -610,7 +642,16 @@ function getLayoutDimensions() {
   const terminalHeight = process.stdout.rows || 24
   const terminalWidth = process.stdout.columns || 80
   const bannerHeight = 4
-  const chatInputHeight = 2 // Fixed: separator + input only
+
+  // Calculate dynamic input height based on wrapped input
+  const inputPrefix = '> '
+  const inputPrefixWidth = stringWidth(inputPrefix)
+  const maxInputWidth = terminalWidth - inputPrefixWidth - 1 // Reserve space for fake cursor
+  const fakeCursor = fakeCursorVisible ? '▌' : ' '
+  const inputWithCursor = chatInput + fakeCursor
+  const wrappedLines = wrapLine(inputWithCursor, maxInputWidth)
+  const chatInputHeight = Math.max(2, wrappedLines.length + 1) // +1 for separator
+
   const maxLines = terminalHeight - bannerHeight - chatInputHeight
   const maxScrollOffset = Math.max(0, contentLines.length - maxLines)
 
@@ -621,6 +662,7 @@ function getLayoutDimensions() {
     chatInputHeight,
     maxLines,
     maxScrollOffset,
+    inputLines: wrappedLines.length,
   }
 }
 
@@ -810,8 +852,9 @@ function setupSubagentKeyHandler(rl: any, onExit: () => void) {
         // Update content to include the new user message
         updateSubagentContent()
 
-        // Re-render the chat input to show it's cleared
-        renderChatInputOnly({ immediate: true })
+        // Force full render to properly clear the input area and adjust layout
+        needsFullRender = true
+        renderSubagentContent()
 
         // Auto-scroll to bottom to show the new message
         scrollToBottom()
@@ -824,14 +867,14 @@ function setupSubagentKeyHandler(rl: any, onExit: () => void) {
 
     if (key && key.name === 'backspace') {
       chatInput = chatInput.slice(0, -1)
-      renderChatInputOnly({ immediate: true }) // Immediate render for responsive typing
+      onUserInput() // Handle input activity
       return
     }
 
     // Add printable characters to chat input (except when using Ctrl for scrolling)
     if (str && str.length === 1 && str.charCodeAt(0) >= 32 && !key.ctrl) {
       chatInput += str
-      renderChatInputOnly({ immediate: true }) // Immediate render for responsive typing
+      onUserInput() // Handle input activity
       return
     }
 
@@ -939,12 +982,13 @@ export function cleanupSubagentBuffer() {
   isStreaming = false
   streamingUpdateBuffer = ''
   userHasManuallyScrolled = false
-  renderBuffer = ''
-
-  // Reset performance caches
+  renderBuffer = '' // Reset performance caches
   wrappedContentCache = []
   lastTerminalWidth = 0
   lastContentHash = ''
+
+  // Reset input height tracking
+  previousInputHeight = 2
 
   // Stop fake cursor
   stopFakeCursorBlinking()
