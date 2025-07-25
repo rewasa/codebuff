@@ -49,6 +49,7 @@ import {
   cleanupSubagentBuffer,
   displaySubagentList,
 } from './cli-handlers/subagent'
+import { handleAltBuffer } from './cli-handlers/altbuffer'
 import {
   enterSubagentListBuffer,
   isInSubagentListMode,
@@ -964,6 +965,13 @@ export class CLI {
       console.log(yellow('Compacting conversation...'))
       // Forward to backend
       return userInput
+    }
+
+    if (cleanInput === 'altbuffer') {
+      handleAltBuffer(this.rl, () => {
+        this.freshPrompt()
+      })
+      return null
     }
 
     // If no command was matched, return the original userInput to be processed as a prompt

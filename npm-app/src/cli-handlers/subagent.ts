@@ -70,6 +70,11 @@ let streamingUpdateTimer: NodeJS.Timeout | null = null
 let userHasManuallyScrolled = false
 let needsFullRender = false
 
+// Performance optimization: cache wrapped content
+let wrappedContentCache: string[] = []
+let lastTerminalWidth = 0
+let lastContentHash = ''
+
 // Track what was last rendered to enable selective updates
 let lastRenderedContent: string[] = []
 let lastScrollOffset = -1
@@ -136,21 +141,15 @@ export function enterSubagentBuffer(
   // Reset chat state
   chatMessages = []
   chatInput = ''
-  if (mockStreamingTimer) {
-    clearInterval(mockStreamingTimer)
-    mockStreamingTimer = null
-  }
-  if (eventLoopKeepAlive) {
-    clearInterval(eventLoopKeepAlive)
-    eventLoopKeepAlive = null
-  }
-  if (streamingUpdateTimer) {
-    clearTimeout(streamingUpdateTimer)
-    streamingUpdateTimer = null
-  }
+  cleanupTimers()
   isStreaming = false
   streamingUpdateBuffer = ''
   userHasManuallyScrolled = false
+  
+  // Reset performance caches
+  wrappedContentCache = []
+  lastTerminalWidth = 0
+  lastContentHash = ''
 
   // Enter alternate screen buffer
   process.stdout.write(ENTER_ALT_BUFFER)
@@ -181,21 +180,15 @@ export function exitSubagentBuffer(rl: any) {
   // Reset chat state
   chatMessages = []
   chatInput = ''
-  if (mockStreamingTimer) {
-    clearInterval(mockStreamingTimer)
-    mockStreamingTimer = null
-  }
-  if (eventLoopKeepAlive) {
-    clearInterval(eventLoopKeepAlive)
-    eventLoopKeepAlive = null
-  }
-  if (streamingUpdateTimer) {
-    clearTimeout(streamingUpdateTimer)
-    streamingUpdateTimer = null
-  }
+  cleanupTimers()
   isStreaming = false
   streamingUpdateBuffer = ''
   userHasManuallyScrolled = false
+  
+  // Reset performance caches
+  wrappedContentCache = []
+  lastTerminalWidth = 0
+  lastContentHash = ''
 
   // Restore all original key handlers
   if (originalKeyHandlers.length > 0) {
@@ -223,49 +216,63 @@ function updateSubagentContent() {
   if (!agentData) return
 
   const fullContent = getSubagentFormattedContent(currentAgentId)
-
+  const terminalWidth = process.stdout.columns || 80
+  
+  // Create content hash for cache invalidation
+  const contentHash = `${fullContent.length}-${chatMessages.length}-${chatMessages.map(m => m.content.length).join(',')}`
+  
+  // Use cached content if nothing changed
+  if (contentHash === lastContentHash && terminalWidth === lastTerminalWidth && wrappedContentCache.length > 0) {
+    contentLines = wrappedContentCache
+    renderSubagentContent()
+    return
+  }
+  
   // Check if content has changed
   if (fullContent.length === lastContentLength && chatMessages.length === 0) {
     return // No new content and no chat messages
   }
   lastContentLength = fullContent.length
 
-  // Split content into lines and wrap them properly
-  const terminalWidth = process.stdout.columns || 80
-  const contentBodyLines = fullContent
-    ? fullContent.split('\n')
-    : ['(no content yet)']
+  // Build content efficiently
+  const wrappedLines = buildWrappedContent(agentData, fullContent, terminalWidth)
+  
+  // Cache the result
+  wrappedContentCache = wrappedLines
+  lastTerminalWidth = terminalWidth
+  lastContentHash = contentHash
+  contentLines = wrappedLines
 
+  // Only reset scroll when entering a new subagent view (not when chat updates)
+  if (chatMessages.length === 0) {
+    scrollOffset = 0
+  }
+  renderSubagentContent()
+}
+
+function buildWrappedContent(agentData: any, fullContent: string, terminalWidth: number): string[] {
+  const contentBodyLines = fullContent ? fullContent.split('\n') : ['(no content yet)']
   const wrappedLines: string[] = []
 
   // Add prompt if exists (but don't duplicate if it's already in the content)
-  if (
-    agentData.prompt &&
-    !fullContent.includes(`Prompt: ${agentData.prompt}`)
-  ) {
+  if (agentData.prompt && !fullContent.includes(`Prompt: ${agentData.prompt}`)) {
     const promptLine = bold(gray(`Prompt: ${agentData.prompt}`))
     wrappedLines.push(...wrapLine(promptLine, terminalWidth))
     wrappedLines.push('') // Add spacing after prompt
   }
 
   // Wrap each content line, preserving empty lines
-  for (let i = 0; i < contentBodyLines.length; i++) {
-    const line = contentBodyLines[i]
+  for (const line of contentBodyLines) {
     if (line === '') {
       wrappedLines.push('') // Preserve empty lines
     } else {
-      const wrapped = wrapLine(line, terminalWidth)
-      wrappedLines.push(...wrapped)
+      wrappedLines.push(...wrapLine(line, terminalWidth))
     }
   }
 
   // Add chat messages to the content if any exist
   if (chatMessages.length > 0) {
     wrappedLines.push('') // Add spacing before chat
-    wrappedLines.push(gray('─'.repeat(terminalWidth)))
-    wrappedLines.push(bold(cyan('💬 Chat History')))
-    wrappedLines.push(gray('─'.repeat(terminalWidth)))
-    wrappedLines.push('')
 
     chatMessages.forEach((msg, index) => {
       const prefix = msg.role === 'user' ? green('You: ') : cyan('Agent: ')
@@ -273,7 +280,7 @@ function updateSubagentContent() {
 
       // Add message separator (except for first message)
       if (index > 0) {
-        wrappedLines.push(gray('┄'.repeat(terminalWidth - 4)))
+        wrappedLines.push('')
       }
 
       // Wrap long messages
@@ -295,13 +302,26 @@ function updateSubagentContent() {
     wrappedLines.push('')
   }
 
-  contentLines = wrappedLines
+  return wrappedLines
+}
 
-  // Only reset scroll when entering a new subagent view (not when chat updates)
-  if (chatMessages.length === 0) {
-    scrollOffset = 0
+function cleanupTimers() {
+  if (mockStreamingTimer) {
+    clearInterval(mockStreamingTimer)
+    mockStreamingTimer = null
   }
-  renderSubagentContent()
+  if (eventLoopKeepAlive) {
+    clearInterval(eventLoopKeepAlive)
+    eventLoopKeepAlive = null
+  }
+  if (streamingUpdateTimer) {
+    clearTimeout(streamingUpdateTimer)
+    streamingUpdateTimer = null
+  }
+  if (pendingRender) {
+    clearTimeout(pendingRender)
+    pendingRender = null
+  }
 }
 
 function startMockStreaming(userMessage: string) {
@@ -357,14 +377,17 @@ This approach provides a clean interface and makes the functionality easily exte
     // Empty interval to keep event loop active
   }, 10)
 
-  // Start streaming simulation
+  // Start streaming simulation with optimized string building
   mockStreamingTimer = setInterval(() => {
     if (mockStreamingIndex < mockStreamingContent.length) {
       const currentMessage = chatMessages[chatMessages.length - 1]
       if (currentMessage && currentMessage.role === 'assistant') {
-        currentMessage.content += mockStreamingContent[mockStreamingIndex]
-        streamingUpdateBuffer += mockStreamingContent[mockStreamingIndex]
-        mockStreamingIndex++
+        // Optimize: build content in chunks instead of character by character
+        const chunkSize = Math.min(3, mockStreamingContent.length - mockStreamingIndex)
+        const chunk = mockStreamingContent.slice(mockStreamingIndex, mockStreamingIndex + chunkSize)
+        currentMessage.content += chunk
+        streamingUpdateBuffer += chunk
+        mockStreamingIndex += chunkSize
 
         // Buffer updates and render less frequently during streaming
         scheduleStreamingUpdate()
@@ -372,18 +395,7 @@ This approach provides a clean interface and makes the functionality easily exte
     } else {
       // Streaming complete
       isStreaming = false
-      if (mockStreamingTimer) {
-        clearInterval(mockStreamingTimer)
-        mockStreamingTimer = null
-      }
-      if (eventLoopKeepAlive) {
-        clearInterval(eventLoopKeepAlive)
-        eventLoopKeepAlive = null
-      }
-      if (streamingUpdateTimer) {
-        clearTimeout(streamingUpdateTimer)
-        streamingUpdateTimer = null
-      }
+      cleanupTimers()
 
       // Final update with complete content
       updateSubagentContent()
@@ -393,7 +405,7 @@ This approach provides a clean interface and makes the functionality easily exte
         scrollToBottom()
       }
     }
-  }, 25) // 25ms delay between characters for realistic streaming of longer content
+  }, 50) // Increased delay since we're processing chunks
 }
 
 function isScrolledToBottom(): boolean {
@@ -816,29 +828,17 @@ export function cleanupSubagentBuffer() {
     isInSubagentBuffer = false
   }
 
-  // Clean up mock streaming timer
-  if (mockStreamingTimer) {
-    clearInterval(mockStreamingTimer)
-    mockStreamingTimer = null
-  }
-  if (eventLoopKeepAlive) {
-    clearInterval(eventLoopKeepAlive)
-    eventLoopKeepAlive = null
-  }
-  if (streamingUpdateTimer) {
-    clearTimeout(streamingUpdateTimer)
-    streamingUpdateTimer = null
-  }
+  // Clean up all timers and state
+  cleanupTimers()
   isStreaming = false
   streamingUpdateBuffer = ''
   userHasManuallyScrolled = false
-
-  // Clean up render buffer
-  if (pendingRender) {
-    clearTimeout(pendingRender)
-    pendingRender = null
-  }
   renderBuffer = ''
+  
+  // Reset performance caches
+  wrappedContentCache = []
+  lastTerminalWidth = 0
+  lastContentHash = ''
 
   // Restore normal terminal mode
   if (process.stdin.isTTY) {
