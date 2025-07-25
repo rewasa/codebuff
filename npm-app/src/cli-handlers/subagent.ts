@@ -70,6 +70,10 @@ let streamingUpdateTimer: NodeJS.Timeout | null = null
 let userHasManuallyScrolled = false
 let needsFullRender = false
 
+// Fake cursor state
+let fakeCursorVisible = true
+let fakeCursorTimer: NodeJS.Timeout | null = null
+
 // Performance optimization: cache wrapped content
 let wrappedContentCache: string[] = []
 let lastTerminalWidth = 0
@@ -145,11 +149,14 @@ export function enterSubagentBuffer(
   isStreaming = false
   streamingUpdateBuffer = ''
   userHasManuallyScrolled = false
-  
+
   // Reset performance caches
   wrappedContentCache = []
   lastTerminalWidth = 0
   lastContentHash = ''
+
+  // Stop fake cursor
+  stopFakeCursorBlinking()
 
   // Enter alternate screen buffer
   process.stdout.write(ENTER_ALT_BUFFER)
@@ -164,6 +171,9 @@ export function enterSubagentBuffer(
 
   // Set up key handler for ESC to exit
   setupSubagentKeyHandler(rl, onExit)
+
+  // Start fake cursor blinking
+  startFakeCursorBlinking()
 }
 
 export function exitSubagentBuffer(rl: any) {
@@ -184,11 +194,14 @@ export function exitSubagentBuffer(rl: any) {
   isStreaming = false
   streamingUpdateBuffer = ''
   userHasManuallyScrolled = false
-  
+
   // Reset performance caches
   wrappedContentCache = []
   lastTerminalWidth = 0
   lastContentHash = ''
+
+  // Stop fake cursor
+  stopFakeCursorBlinking()
 
   // Restore all original key handlers
   if (originalKeyHandlers.length > 0) {
@@ -217,17 +230,21 @@ function updateSubagentContent() {
 
   const fullContent = getSubagentFormattedContent(currentAgentId)
   const terminalWidth = process.stdout.columns || 80
-  
+
   // Create content hash for cache invalidation
-  const contentHash = `${fullContent.length}-${chatMessages.length}-${chatMessages.map(m => m.content.length).join(',')}`
-  
+  const contentHash = `${fullContent.length}-${chatMessages.length}-${chatMessages.map((m) => m.content.length).join(',')}`
+
   // Use cached content if nothing changed
-  if (contentHash === lastContentHash && terminalWidth === lastTerminalWidth && wrappedContentCache.length > 0) {
+  if (
+    contentHash === lastContentHash &&
+    terminalWidth === lastTerminalWidth &&
+    wrappedContentCache.length > 0
+  ) {
     contentLines = wrappedContentCache
     renderSubagentContent()
     return
   }
-  
+
   // Check if content has changed
   if (fullContent.length === lastContentLength && chatMessages.length === 0) {
     return // No new content and no chat messages
@@ -235,8 +252,12 @@ function updateSubagentContent() {
   lastContentLength = fullContent.length
 
   // Build content efficiently
-  const wrappedLines = buildWrappedContent(agentData, fullContent, terminalWidth)
-  
+  const wrappedLines = buildWrappedContent(
+    agentData,
+    fullContent,
+    terminalWidth
+  )
+
   // Cache the result
   wrappedContentCache = wrappedLines
   lastTerminalWidth = terminalWidth
@@ -250,12 +271,21 @@ function updateSubagentContent() {
   renderSubagentContent()
 }
 
-function buildWrappedContent(agentData: any, fullContent: string, terminalWidth: number): string[] {
-  const contentBodyLines = fullContent ? fullContent.split('\n') : ['(no content yet)']
+function buildWrappedContent(
+  agentData: any,
+  fullContent: string,
+  terminalWidth: number
+): string[] {
+  const contentBodyLines = fullContent
+    ? fullContent.split('\n')
+    : ['(no content yet)']
   const wrappedLines: string[] = []
 
   // Add prompt if exists (but don't duplicate if it's already in the content)
-  if (agentData.prompt && !fullContent.includes(`Prompt: ${agentData.prompt}`)) {
+  if (
+    agentData.prompt &&
+    !fullContent.includes(`Prompt: ${agentData.prompt}`)
+  ) {
     const promptLine = bold(gray(`Prompt: ${agentData.prompt}`))
     wrappedLines.push(...wrapLine(promptLine, terminalWidth))
     wrappedLines.push('') // Add spacing after prompt
@@ -322,6 +352,10 @@ function cleanupTimers() {
     clearTimeout(pendingRender)
     pendingRender = null
   }
+  if (fakeCursorTimer) {
+    clearTimeout(fakeCursorTimer)
+    fakeCursorTimer = null
+  }
 }
 
 function startMockStreaming(userMessage: string) {
@@ -372,6 +406,8 @@ This approach provides a clean interface and makes the functionality easily exte
   isStreaming = true
   streamingUpdateBuffer = ''
 
+  // Keep cursor blinking during streaming - no need to stop it
+
   // Keep event loop active during streaming
   eventLoopKeepAlive = setInterval(() => {
     // Empty interval to keep event loop active
@@ -383,8 +419,14 @@ This approach provides a clean interface and makes the functionality easily exte
       const currentMessage = chatMessages[chatMessages.length - 1]
       if (currentMessage && currentMessage.role === 'assistant') {
         // Optimize: build content in chunks instead of character by character
-        const chunkSize = Math.min(3, mockStreamingContent.length - mockStreamingIndex)
-        const chunk = mockStreamingContent.slice(mockStreamingIndex, mockStreamingIndex + chunkSize)
+        const chunkSize = Math.min(
+          3,
+          mockStreamingContent.length - mockStreamingIndex
+        )
+        const chunk = mockStreamingContent.slice(
+          mockStreamingIndex,
+          mockStreamingIndex + chunkSize
+        )
         currentMessage.content += chunk
         streamingUpdateBuffer += chunk
         mockStreamingIndex += chunkSize
@@ -399,6 +441,10 @@ This approach provides a clean interface and makes the functionality easily exte
 
       // Final update with complete content
       updateSubagentContent()
+
+      // Restart fake cursor blinking
+      startFakeCursorBlinking()
+      renderChatInputOnly({ immediate: true })
 
       // Only auto-scroll to bottom if user hasn't manually scrolled away
       if (!userHasManuallyScrolled) {
@@ -419,7 +465,52 @@ function scrollToBottom() {
   // Set scroll to bottom
   scrollOffset = maxScrollOffset
 }
+function getCursorBlinkTiming() {
+  if (isStreaming) {
+    // During streaming: slower blink with 2:1 ratio (visible:invisible)
+    return {
+      visibleDuration: 1200,
+      invisibleDuration: 600,
+    }
+  } else {
+    // Normal blinking: faster blink with 2:1 ratio (visible:invisible)
+    return {
+      visibleDuration: 800,
+      invisibleDuration: 400,
+    }
+  }
+}
 
+function startFakeCursorBlinking() {
+  if (fakeCursorTimer) {
+    clearTimeout(fakeCursorTimer)
+  }
+
+  fakeCursorVisible = true
+
+  function scheduleNextBlink() {
+    const timing = getCursorBlinkTiming()
+    const nextDelay = fakeCursorVisible
+      ? timing.visibleDuration
+      : timing.invisibleDuration
+
+    fakeCursorTimer = setTimeout(() => {
+      fakeCursorVisible = !fakeCursorVisible
+      renderChatInputOnly({ immediate: true })
+      scheduleNextBlink()
+    }, nextDelay)
+  }
+
+  scheduleNextBlink()
+}
+
+function stopFakeCursorBlinking() {
+  if (fakeCursorTimer) {
+    clearTimeout(fakeCursorTimer)
+    fakeCursorTimer = null
+  }
+  fakeCursorVisible = true // Always show when not blinking
+}
 function buildChatInputBuffer(
   terminalWidth: number,
   terminalHeight: number
@@ -447,29 +538,43 @@ function buildChatInputBuffer(
     inputBuffer += separatorLine
   }
 
-  // Build input line at fixed position
-  inputBuffer += `\x1b[${inputRow};1H\x1b[K`
+  // Always hide the real cursor
+  inputBuffer += '\x1b[?25l'
 
+  // Build input with fake cursor
   const inputPrefix = yellow('> ')
   const inputPrefixWidth = stringWidth(inputPrefix)
-  const maxInputWidth = terminalWidth - inputPrefixWidth
+  const maxInputWidth = terminalWidth - inputPrefixWidth - 1 // Reserve space for fake cursor
 
-  let displayInput = chatInput
-  if (stringWidth(chatInput) > maxInputWidth) {
-    while (
-      stringWidth(displayInput + '...') > maxInputWidth &&
-      displayInput.length > 0
-    ) {
-      displayInput = displayInput.slice(0, -1)
-    }
-    displayInput += '...'
+  // Add fake cursor to the input
+  const fakeCursor = fakeCursorVisible ? yellow('▌') : ' '
+  const inputWithCursor = chatInput + fakeCursor
+
+  // Handle multi-line wrapping
+  const wrappedLines = wrapLine(inputWithCursor, maxInputWidth)
+  const totalLines = wrappedLines.length
+  const startRow = Math.max(inputRow - totalLines + 1, separatorRow + 1)
+
+  // Clear the input area (might span multiple lines)
+  for (let i = 0; i < totalLines; i++) {
+    const row = startRow + i
+    inputBuffer += `\x1b[${row};1H\x1b[K`
   }
 
-  inputBuffer += `${inputPrefix}${displayInput}`
+  // Render each line of wrapped input
+  wrappedLines.forEach((line, index) => {
+    const row = startRow + index
+    inputBuffer += `\x1b[${row};1H`
 
-  // Position cursor at end of input
-  const cursorCol = inputPrefixWidth + stringWidth(displayInput) + 1
-  inputBuffer += `\x1b[${inputRow};${cursorCol}H`
+    if (index === 0) {
+      // First line gets the prefix
+      inputBuffer += `${inputPrefix}${line}`
+    } else {
+      // Continuation lines get indentation
+      const indent = ' '.repeat(inputPrefixWidth)
+      inputBuffer += `${indent}${line}`
+    }
+  })
 
   return inputBuffer
 }
@@ -559,14 +664,15 @@ function renderSubagentContent() {
     renderContentArea(layout, visibleLines)
     lastRenderedContent = [...visibleLines]
     lastScrollOffset = scrollOffset
-    // Update chat input to show correct scroll indicator
+    // Update chat input to show correct scroll indicator and maintain cursor position
     renderChatInputOnly()
   } else if (
     JSON.stringify(visibleLines) !== JSON.stringify(lastRenderedContent)
   ) {
-    // Content changed (streaming updates)
+    // Content changed (streaming updates) - only update content, don't move cursor
     renderContentArea(layout, visibleLines)
     lastRenderedContent = [...visibleLines]
+    // Don't re-render chat input during streaming to avoid cursor flashing
   }
 }
 
@@ -608,9 +714,8 @@ function renderFullScreen(layout: any, visibleLines: string[]) {
     }
   }
 
-  // Render chat input
+  // Render chat input and ensure cursor stays there
   screenBuffer += buildChatInputBuffer(terminalWidth, terminalHeight)
-  screenBuffer += '\x1b[?25h' // Show cursor at final position
 
   // Single write for entire screen
   immediateRender(screenBuffer)
@@ -632,6 +737,7 @@ function renderContentArea(layout: any, visibleLines: string[]) {
     }
   }
 
+  // Don't move cursor after content updates - let chat input handle cursor positioning
   addToRenderBuffer(contentBuffer)
 }
 
@@ -639,15 +745,15 @@ function renderChatInputOnly(options: { immediate?: boolean } = {}) {
   const layout = getLayoutDimensions()
   const { terminalHeight, terminalWidth } = layout
 
-  // Build chat input buffer
+  // Build chat input buffer (cursor positioning included)
   const inputBuffer = buildChatInputBuffer(terminalWidth, terminalHeight)
 
   if (options.immediate) {
     // Immediate render for responsive typing
-    immediateRender(inputBuffer + '\x1b[?25h')
+    immediateRender(inputBuffer)
   } else {
     // Buffered render for other updates
-    addToRenderBuffer(inputBuffer + '\x1b[?25h')
+    addToRenderBuffer(inputBuffer)
   }
 }
 
@@ -834,11 +940,14 @@ export function cleanupSubagentBuffer() {
   streamingUpdateBuffer = ''
   userHasManuallyScrolled = false
   renderBuffer = ''
-  
+
   // Reset performance caches
   wrappedContentCache = []
   lastTerminalWidth = 0
   lastContentHash = ''
+
+  // Stop fake cursor
+  stopFakeCursorBlinking()
 
   // Restore normal terminal mode
   if (process.stdin.isTTY) {
