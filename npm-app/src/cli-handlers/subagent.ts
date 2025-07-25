@@ -58,8 +58,10 @@ let chatMessages: Array<{
   role: 'user' | 'assistant'
   content: string
   timestamp: number
+  isQueued?: boolean
 }> = []
 let chatInput = ''
+let messageQueue: string[] = [] // Queue for messages sent during streaming
 let mockStreamingContent = ''
 let mockStreamingIndex = 0
 let mockStreamingTimer: NodeJS.Timeout | null = null
@@ -149,6 +151,7 @@ export function enterSubagentBuffer(
   // Reset chat state
   chatMessages = []
   chatInput = ''
+  messageQueue = []
   cleanupTimers()
   isStreaming = false
   streamingUpdateBuffer = ''
@@ -195,6 +198,7 @@ export function exitSubagentBuffer(rl: any) {
   // Reset chat state
   chatMessages = []
   chatInput = ''
+  messageQueue = []
   cleanupTimers()
   isStreaming = false
   streamingUpdateBuffer = ''
@@ -311,24 +315,45 @@ function buildWrappedContent(
     wrappedLines.push('') // Add spacing before chat
 
     chatMessages.forEach((msg, index) => {
-      const prefix = msg.role === 'user' ? green('You: ') : cyan('Agent: ')
       const content = msg.content || ''
+      const timestamp = new Date(msg.timestamp).toLocaleTimeString([], {
+        hour: '2-digit',
+        minute: '2-digit',
+      })
+      const roleLabel = msg.role === 'user' ? 'You' : 'Agent'
+      const roleInfo = `  ${roleLabel} • ${timestamp}`
 
-      // Add message separator (except for first message)
-      if (index > 0) {
-        wrappedLines.push('')
+      // Create separator line with role and timestamp on the right
+      const separatorChar = '─'
+      const roleInfoWidth = stringWidth(roleInfo)
+      const separatorLength = Math.max(0, terminalWidth - roleInfoWidth)
+      const separatorLine =
+        gray(separatorChar.repeat(separatorLength)) +
+        '  ' +
+        (msg.role === 'user' ? green(roleLabel) : cyan(roleLabel)) +
+        gray(' • ') +
+        gray(timestamp)
+
+      wrappedLines.push(separatorLine)
+      wrappedLines.push('') // Add spacing after separator
+
+      // Add message content without prefix
+      if (content) {
+        // Wrap long messages
+        const maxWidth = terminalWidth - 2 // Small margin
+        if (content.length > maxWidth) {
+          const wrapped = wrapLine(content, maxWidth)
+          wrapped.forEach((line) => {
+            wrappedLines.push(line)
+          })
+        } else {
+          wrappedLines.push(content)
+        }
       }
 
-      // Wrap long messages
-      const maxWidth = terminalWidth - 10
-      if (content.length > maxWidth) {
-        const wrapped = wrapLine(content, maxWidth)
-        wrappedLines.push(prefix + wrapped[0])
-        wrapped.slice(1).forEach((line) => {
-          wrappedLines.push('      ' + line) // Indent continuation lines
-        })
-      } else {
-        wrappedLines.push(prefix + content)
+      // Add spacing after message (except for last message)
+      if (index < chatMessages.length - 1) {
+        wrappedLines.push('')
       }
     })
   }
@@ -449,6 +474,9 @@ This approach provides a clean interface and makes the functionality easily exte
       if (!userHasManuallyScrolled) {
         scrollToBottom()
       }
+
+      // Process queued messages after streaming completes
+      processMessageQueue()
     }
   }, 50) // Increased delay since we're processing chunks
 }
@@ -463,6 +491,27 @@ function scrollToBottom() {
   const { maxScrollOffset } = getLayoutDimensions()
   // Set scroll to bottom
   scrollOffset = maxScrollOffset
+}
+
+function processMessageQueue() {
+  if (messageQueue.length === 0) return
+
+  // Process the first queued message
+  const queuedMessage = messageQueue.shift()!
+
+  // Add to chat messages with isQueued flag
+  chatMessages.push({
+    role: 'user',
+    content: queuedMessage,
+    timestamp: Date.now(),
+    isQueued: true,
+  })
+
+  // Update content but don't auto-scroll for queued messages
+  updateSubagentContent()
+
+  // Start streaming response for the queued message
+  setTimeout(() => startMockStreaming(queuedMessage), 500)
 }
 function getCursorBlinkTiming() {
   if (isStreaming) {
@@ -557,7 +606,7 @@ function buildChatInputBuffer(
   }
 
   // Update previous height for next render
-  previousInputHeight = chatInputHeight
+  previousInputHeight = chatInputHeight // Remove queued message display from UI
 
   // Build separator line
   inputBuffer += `\x1b[${separatorRow};1H`
@@ -565,7 +614,7 @@ function buildChatInputBuffer(
     const separatorLine = gray('─'.repeat(terminalWidth))
     inputBuffer += separatorLine
   } else {
-    const indicator = ' ↓ messages below ↓ '
+    const indicator = ' ↓ more below ↓ '
     const indicatorWidth = stringWidth(indicator)
     const separatorLength = Math.max(0, terminalWidth - indicatorWidth)
     const leftSeparator = '─'.repeat(Math.floor(separatorLength / 2))
@@ -636,7 +685,7 @@ function immediateRender(content: string) {
 function getLayoutDimensions() {
   const terminalHeight = process.stdout.rows || 24
   const terminalWidth = process.stdout.columns || 80
-  const bannerHeight = 4
+  const bannerHeight = 0
 
   // Calculate dynamic input height based on wrapped input
   const inputPrefix = '> '
@@ -645,7 +694,7 @@ function getLayoutDimensions() {
   const fakeCursor = fakeCursorVisible ? '▌' : ' '
   const inputWithCursor = chatInput + fakeCursor
   const wrappedLines = wrapLine(inputWithCursor, maxInputWidth)
-  const chatInputHeight = Math.max(2, wrappedLines.length + 1) // +1 for separator
+  const chatInputHeight = Math.max(3, wrappedLines.length + 2) // +2 for separator and help hint
 
   const maxLines = terminalHeight - bannerHeight - chatInputHeight
   const maxScrollOffset = Math.max(0, contentLines.length - maxLines)
@@ -660,7 +709,6 @@ function getLayoutDimensions() {
     inputLines: wrappedLines.length,
   }
 }
-
 function scheduleStreamingUpdate() {
   if (streamingUpdateTimer) return // Already scheduled
 
@@ -706,10 +754,10 @@ function renderSubagentContent() {
   } else if (
     JSON.stringify(visibleLines) !== JSON.stringify(lastRenderedContent)
   ) {
-    // Content changed (streaming updates) - only update content, don't move cursor
+    // Content changed (streaming updates) - only update content, don't re-render chat input
     renderContentArea(layout, visibleLines)
     lastRenderedContent = [...visibleLines]
-    // Don't re-render chat input during streaming to avoid cursor flashing
+    // Don't re-render chat input during streaming to avoid separator flashing
   }
 }
 
@@ -722,25 +770,9 @@ function renderFullScreen(layout: any, visibleLines: string[]) {
   // Clear screen and move cursor to top
   screenBuffer += CLEAR_SCREEN + '\x1b[1;1H'
 
-  // Render banner at fixed position (rows 1-3)
-  const bannerText =
-    'Type to chat, Enter to send | ↑/↓ to scroll | ESC to go back'
-  const bannerTextWidth = stringWidth(bannerText)
-  const bannerPadding = Math.max(
-    0,
-    Math.floor((terminalWidth - bannerTextWidth) / 2)
-  )
-  const banner =
-    ' '.repeat(bannerPadding) + bannerText + ' '.repeat(bannerPadding)
-  const bannerLine = cyan('═'.repeat(terminalWidth))
-
-  screenBuffer += '\x1b[1;1H\x1b[K' + bannerLine
-  screenBuffer += '\x1b[2;1H\x1b[K' + bold(banner)
-  screenBuffer += '\x1b[3;1H\x1b[K' + bannerLine
-
-  // Render content area
-  const contentStartRow = 5
-  const contentEndRow = terminalHeight - 3
+  // Render content area (no banner)
+  const contentStartRow = 1
+  const contentEndRow = terminalHeight - 4
 
   for (let row = contentStartRow; row <= contentEndRow; row++) {
     const contentIndex = row - contentStartRow
@@ -754,14 +786,22 @@ function renderFullScreen(layout: any, visibleLines: string[]) {
   // Render chat input and ensure cursor stays there
   screenBuffer += buildChatInputBuffer(terminalWidth, terminalHeight)
 
+  // Add instructions at bottom right only when input is empty
+  if (chatInput.trim() === '') {
+    const instructions = gray('/help: more info • ESC: back')
+    const instructionsWidth = stringWidth(instructions)
+    const instructionsCol = Math.max(1, terminalWidth - instructionsWidth)
+    screenBuffer += `\x1b[${terminalHeight};${instructionsCol}H${instructions}`
+  }
+
   // Single write for entire screen
   immediateRender(screenBuffer)
 }
 
 function renderContentArea(layout: any, visibleLines: string[]) {
   const { terminalHeight } = layout
-  const contentStartRow = 5
-  const contentEndRow = terminalHeight - 3
+  const contentStartRow = 1
+  const contentEndRow = terminalHeight - 4
 
   // Build content area in buffer, then write once
   let contentBuffer = ''
@@ -785,12 +825,24 @@ function renderChatInputOnly(options: { immediate?: boolean } = {}) {
   // Build chat input buffer (cursor positioning included)
   const inputBuffer = buildChatInputBuffer(terminalWidth, terminalHeight)
 
+  // Add help instructions rendering
+  let helpBuffer = ''
+  if (chatInput.trim() === '') {
+    const instructions = gray('/help: more info • ESC: back')
+    const instructionsWidth = stringWidth(instructions)
+    const instructionsCol = Math.max(1, terminalWidth - instructionsWidth)
+    helpBuffer += `\x1b[${terminalHeight};${instructionsCol}H${instructions}`
+  } else {
+    // Clear the help line when there's input
+    helpBuffer += `\x1b[${terminalHeight};1H\x1b[K`
+  }
+
   if (options.immediate) {
     // Immediate render for responsive typing
-    immediateRender(inputBuffer)
+    immediateRender(inputBuffer + helpBuffer)
   } else {
     // Buffered render for other updates
-    addToRenderBuffer(inputBuffer)
+    addToRenderBuffer(inputBuffer + helpBuffer)
   }
 }
 
@@ -835,27 +887,39 @@ function setupSubagentKeyHandler(rl: any, onExit: () => void) {
     if (key && key.name === 'return') {
       // Send message
       if (chatInput.trim()) {
-        chatMessages.push({
-          role: 'user',
-          content: chatInput.trim(),
-          timestamp: Date.now(),
-        })
-
         const userMessage = chatInput.trim()
         chatInput = ''
 
-        // Update content to include the new user message
-        updateSubagentContent()
+        if (isStreaming) {
+          // Queue the message if streaming is active
+          messageQueue.push(userMessage)
 
-        // Force full render to properly clear the input area and adjust layout
-        needsFullRender = true
-        renderSubagentContent()
+          // Only re-render the chat input, no visual queue display
+          renderChatInputOnly({ immediate: true })
+        } else {
+          // Process immediately if not streaming
+          chatMessages.push({
+            role: 'user',
+            content: userMessage,
+            timestamp: Date.now(),
+            isQueued: false,
+          })
 
-        // Auto-scroll to bottom to show the new message
-        scrollToBottom()
+          // Update content to include the new user message
+          updateSubagentContent()
 
-        // Start mock streaming response
-        setTimeout(() => startMockStreaming(userMessage), 500)
+          // Force full render to properly clear the input area and adjust layout
+          needsFullRender = true
+          renderSubagentContent()
+
+          // Auto-scroll to bottom for non-queued messages
+          if (!userHasManuallyScrolled) {
+            scrollToBottom()
+          }
+
+          // Start mock streaming response
+          setTimeout(() => startMockStreaming(userMessage), 500)
+        }
       }
       return
     }
@@ -977,6 +1041,7 @@ export function cleanupSubagentBuffer() {
   isStreaming = false
   streamingUpdateBuffer = ''
   userHasManuallyScrolled = false
+  messageQueue = []
   renderBuffer = '' // Reset performance caches
   wrappedContentCache = []
   lastTerminalWidth = 0
