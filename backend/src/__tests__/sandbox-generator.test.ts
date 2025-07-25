@@ -1,11 +1,11 @@
-import { describe, test, expect, beforeEach, afterEach } from 'bun:test'
-import {
-  runProgrammaticStep,
-  clearAgentGeneratorCache,
-} from '../run-programmatic-step'
 import { AgentState } from '@codebuff/common/types/session-state'
-import { AgentTemplate } from '../templates/types'
+import { afterEach, beforeEach, describe, expect, test } from 'bun:test'
 import { WebSocket } from 'ws'
+import {
+  clearAgentGeneratorCache,
+  runProgrammaticStep,
+} from '../run-programmatic-step'
+import { AgentTemplate } from '../templates/types'
 import { mockFileContext, MockWebSocket } from './test-utils'
 
 describe('QuickJS Sandbox Generator', () => {
@@ -21,7 +21,7 @@ describe('QuickJS Sandbox Generator', () => {
       agentId: 'test-agent-123',
       agentType: 'test-vm-agent',
       messageHistory: [],
-      report: {},
+      output: undefined,
       agentContext: {},
       subagents: [],
       stepsRemaining: 10,
@@ -33,9 +33,9 @@ describe('QuickJS Sandbox Generator', () => {
       name: 'Test VM Agent',
       purpose: 'Test VM isolation',
       model: 'anthropic/claude-4-sonnet-20250522',
-      outputMode: 'report',
+      outputMode: 'json',
       includeMessageHistory: false,
-      toolNames: ['update_report'],
+      toolNames: ['set_output'],
       spawnableAgents: [],
       promptSchema: {},
       systemPrompt: '',
@@ -45,7 +45,7 @@ describe('QuickJS Sandbox Generator', () => {
       initialAssistantPrefix: '',
       stepAssistantMessage: '',
       stepAssistantPrefix: '',
-      handleStep: '', // Will be set per test
+      handleSteps: '', // Will be set per test
     }
 
     // Common params structure
@@ -72,16 +72,14 @@ describe('QuickJS Sandbox Generator', () => {
 
   test('should execute string-based generator in QuickJS sandbox', async () => {
     // Customize template for this test
-    mockTemplate.handleStep = `
+    mockTemplate.handleSteps = `
       function* ({ agentState, prompt, params }) {
         yield {
-          toolName: 'update_report',
+          toolName: 'set_output',
           args: {
-            json_update: {
-              message: 'Hello from QuickJS sandbox!',
-              prompt: prompt,
-              agentId: agentState.agentId
-            }
+            message: 'Hello from QuickJS sandbox!',
+            prompt: prompt,
+            agentId: agentState.agentId
           }
         }
       }
@@ -90,7 +88,7 @@ describe('QuickJS Sandbox Generator', () => {
 
     const result = await runProgrammaticStep(mockAgentState, mockParams)
 
-    expect(result.agentState.report).toEqual({
+    expect(result.agentState.output).toEqual({
       message: 'Hello from QuickJS sandbox!',
       prompt: 'Test prompt',
       agentId: 'test-agent-123',
@@ -104,7 +102,7 @@ describe('QuickJS Sandbox Generator', () => {
     mockTemplate.name = 'Test VM Agent Error'
     mockTemplate.purpose = 'Test QuickJS error handling'
     mockTemplate.toolNames = []
-    mockTemplate.handleStep = `
+    mockTemplate.handleSteps = `
       function* ({ agentState, prompt, params }) {
         throw new Error('QuickJS error test')
       }
@@ -120,7 +118,7 @@ describe('QuickJS Sandbox Generator', () => {
     const result = await runProgrammaticStep(mockAgentState, mockParams)
 
     expect(result.endTurn).toBe(true)
-    expect(result.agentState.report.error).toContain(
+    expect(result.agentState.output?.error).toContain(
       'Error executing programmatic agent'
     )
   })

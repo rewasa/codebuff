@@ -1,4 +1,5 @@
 import { runAgentStep } from '@codebuff/backend/run-agent-step'
+import { getAllAgentTemplates } from '@codebuff/backend/templates/agent-registry'
 import { ClientToolCall } from '@codebuff/backend/tools/constants'
 import {
   requestFiles as originalRequestFiles,
@@ -7,6 +8,7 @@ import {
 import { getFileTokenScores } from '@codebuff/code-map/parse'
 import { FileChanges } from '@codebuff/common/actions'
 import { TEST_USER_ID } from '@codebuff/common/constants'
+import { mockModule } from '@codebuff/common/testing/mock-modules'
 import {
   AgentState,
   AgentTemplateType,
@@ -50,7 +52,7 @@ function readMockFile(projectRoot: string, filePath: string): string | null {
 let toolCalls: ClientToolCall[] = []
 let toolResults: ToolResult[] = []
 export function createFileReadingMock(projectRoot: string) {
-  mock.module('@codebuff/backend/websockets/websocket-action', () => ({
+  mockModule('@codebuff/backend/websockets/websocket-action', () => ({
     requestFiles: ((ws: WebSocket, filePaths: string[]) => {
       const files: Record<string, string | null> = {}
       for (const filePath of filePaths) {
@@ -152,6 +154,7 @@ export async function runAgentStepScaffolding(
   mockWs.close = mock()
 
   let fullResponse = ''
+  const { agentRegistry } = await getAllAgentTemplates({ fileContext })
 
   const result = await runAgentStep(mockWs, {
     userId: TEST_USER_ID,
@@ -166,6 +169,7 @@ export async function runAgentStepScaffolding(
     },
     agentType,
     fileContext,
+    agentRegistry,
     agentState,
     prompt,
     params: undefined,
@@ -184,7 +188,7 @@ export async function runToolCalls(toolCalls: ClientToolCall[]) {
   for (const toolCall of toolCalls) {
     if (
       toolCall.toolName === 'spawn_agents' ||
-      toolCall.toolName === 'update_report'
+      toolCall.toolName === 'set_output'
     ) {
       // should never happen
       continue

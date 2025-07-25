@@ -68,6 +68,16 @@ let isStreaming = false
 let streamingUpdateBuffer: string = ''
 let streamingUpdateTimer: NodeJS.Timeout | null = null
 let userHasManuallyScrolled = false
+let needsFullRender = false
+
+// Track what was last rendered to enable selective updates
+let lastRenderedContent: string[] = []
+let lastScrollOffset = -1
+
+// Batched rendering system to reduce stdout writes
+let renderBuffer: string = ''
+let pendingRender: NodeJS.Timeout | null = null
+const RENDER_DEBOUNCE_MS = 4 // Minimal debounce for responsive input
 
 export function isInSubagentBufferMode(): boolean {
   return isInSubagentBuffer
@@ -289,8 +299,9 @@ function updateSubagentContent() {
 
   // Only reset scroll when entering a new subagent view (not when chat updates)
   if (chatMessages.length === 0) {
-    scrollOffset = 0        }
-        renderSubagentContent()
+    scrollOffset = 0
+  }
+  renderSubagentContent()
 }
 
 function startMockStreaming(userMessage: string) {
@@ -325,190 +336,6 @@ export class ${userMessage.replace(/\s+/g, '')}Manager {
 \`\`\`
 
 This approach provides a clean interface and makes the functionality easily extensible. What do you think about this direction?`,
-    `That's an interesting question about "${userMessage}"! Based on the codebase context, I can see several relevant patterns and implementations that we can build upon.
-
-Looking at the current architecture, I notice that the system already has robust handling for similar functionality in other areas. For example, the way the WebSocket communication is structured provides a good foundation for what you're asking about.
-
-Here's my analysis of the current state:
-
-**Existing Strengths:**
-- The modular architecture makes it easy to add new features
-- The TypeScript types provide good safety guarantees
-- The error handling patterns are well-established
-- The testing infrastructure is already in place
-
-**Areas for Enhancement:**
-- We could improve the performance by implementing caching
-- The user experience could be enhanced with better feedback
-- Error messages could be more descriptive
-- Documentation could be expanded
-
-**Recommended Implementation:**
-
-1. **Phase 1**: Create the core functionality with basic features
-2. **Phase 2**: Add advanced options and configuration
-3. **Phase 3**: Optimize performance and add monitoring
-
-For the implementation, I'd suggest starting with a simple approach and then iterating. Here's a rough outline:
-
-\`\`\`typescript
-// Core implementation
-export async function handle${userMessage.replace(/\s+/g, '')}(
-  input: string,
-  options: ProcessingOptions = {}
-): Promise<ProcessingResult> {
-  try {
-    // Validate input
-    if (!input || typeof input !== 'string') {
-      throw new Error('Invalid input provided')
-    }
-    
-    // Process the request
-    const result = await processRequest(input, options)
-    
-    // Return formatted result
-    return {
-      success: true,
-      data: result,
-      timestamp: Date.now()
-    }
-  } catch (error) {
-    logger.error('Processing failed:', error)
-    return {
-      success: false,
-      error: error.message,
-      timestamp: Date.now()
-    }
-  }
-}
-\`\`\`
-
-This provides a solid foundation that we can build upon. Would you like me to elaborate on any particular aspect?`,
-    `Great point about "${userMessage}"! Looking at the current implementation, I notice that we could improve this significantly by leveraging some of the existing patterns in the codebase.
-
-Let me walk you through what I'm seeing and how we can enhance it:
-
-**Current State Analysis:**
-The existing code has a solid foundation, but there are several opportunities for improvement. The main areas I've identified are:
-
-1. **Performance Optimization**: The current approach works but could be more efficient
-2. **Error Handling**: We can make the error messages more user-friendly
-3. **Extensibility**: The design could be more modular to support future enhancements
-4. **Testing**: We need better test coverage for edge cases
-
-**Proposed Solution:**
-
-I recommend implementing a layered approach that builds on the existing architecture:
-
-\`\`\`typescript
-// Enhanced implementation with better patterns
-interface Enhanced${userMessage.replace(/\s+/g, '')}Options {
-  timeout?: number
-  retries?: number
-  caching?: boolean
-  validation?: boolean
-}
-
-class Enhanced${userMessage.replace(/\s+/g, '')}Processor {
-  private cache = new Map<string, any>()
-  private metrics = {
-    processed: 0,
-    errors: 0,
-    cacheHits: 0
-  }
-
-  constructor(private options: Enhanced${userMessage.replace(/\s+/g, '')}Options = {}) {
-    this.options = {
-      timeout: 5000,
-      retries: 3,
-      caching: true,
-      validation: true,
-      ...options
-    }
-  }
-
-  async process(input: string): Promise<ProcessingResult> {
-    const startTime = performance.now()
-    
-    try {
-      // Check cache first
-      if (this.options.caching && this.cache.has(input)) {
-        this.metrics.cacheHits++
-        return this.cache.get(input)
-      }
-
-      // Validate input if enabled
-      if (this.options.validation) {
-        this.validateInput(input)
-      }
-
-      // Process with retry logic
-      const result = await this.processWithRetry(input)
-      
-      // Cache result if enabled
-      if (this.options.caching) {
-        this.cache.set(input, result)
-      }
-
-      this.metrics.processed++
-      
-      return {
-        ...result,
-        processingTime: performance.now() - startTime,
-        fromCache: false
-      }
-    } catch (error) {
-      this.metrics.errors++
-      throw new ProcessingError(
-        \`Failed to process: \${error.message}\`,
-        { input, error, metrics: this.metrics }
-      )
-    }
-  }
-
-  private async processWithRetry(input: string): Promise<any> {
-    let lastError: Error
-    
-    for (let attempt = 1; attempt <= this.options.retries!; attempt++) {
-      try {
-        return await this.executeProcessing(input)
-      } catch (error) {
-        lastError = error as Error
-        if (attempt < this.options.retries!) {
-          await this.delay(Math.pow(2, attempt) * 100) // Exponential backoff
-        }
-      }
-    }
-    
-    throw lastError!
-  }
-
-  private validateInput(input: string): void {
-    if (!input || input.trim().length === 0) {
-      throw new ValidationError('Input cannot be empty')
-    }
-    
-    if (input.length > 10000) {
-      throw new ValidationError('Input too long (max 10000 characters)')
-    }
-  }
-
-  getMetrics() {
-    return { ...this.metrics }
-  }
-}
-\`\`\`
-
-**Benefits of this approach:**
-- Better performance through caching
-- Robust error handling with retries
-- Comprehensive metrics for monitoring
-- Flexible configuration options
-- Easy to test and maintain
-
-This implementation follows the existing patterns in the codebase while adding significant improvements. The modular design makes it easy to extend with additional features in the future.
-
-Would you like me to implement any specific part of this solution first?`,
   ]
 
   const randomResponse = responses[Math.floor(Math.random() * responses.length)]
@@ -534,7 +361,7 @@ Would you like me to implement any specific part of this solution first?`,
   mockStreamingTimer = setInterval(() => {
     if (mockStreamingIndex < mockStreamingContent.length) {
       const currentMessage = chatMessages[chatMessages.length - 1]
-      if (currentMessage.role === 'assistant') {
+      if (currentMessage && currentMessage.role === 'assistant') {
         currentMessage.content += mockStreamingContent[mockStreamingIndex]
         streamingUpdateBuffer += mockStreamingContent[mockStreamingIndex]
         mockStreamingIndex++
@@ -568,6 +395,7 @@ Would you like me to implement any specific part of this solution first?`,
     }
   }, 25) // 25ms delay between characters for realistic streaming of longer content
 }
+
 function isScrolledToBottom(): boolean {
   const { maxScrollOffset } = getLayoutDimensions()
   // Consider "at bottom" if within 2 lines of the actual bottom
@@ -633,16 +461,6 @@ function buildChatInputBuffer(
 
   return inputBuffer
 }
-
-// Track what was last rendered to enable selective updates
-let lastRenderedContent: string[] = []
-let lastScrollOffset = -1
-let needsFullRender = true
-
-// Batched rendering system to reduce stdout writes
-let renderBuffer: string = ''
-let pendingRender: NodeJS.Timeout | null = null
-const RENDER_DEBOUNCE_MS = 4 // Minimal debounce for responsive input
 
 function flushRenderBuffer() {
   if (renderBuffer) {
@@ -838,9 +656,6 @@ function setupSubagentKeyHandler(rl: any, onExit: () => void) {
 
   process.stdout.on('resize', handleResize)
 
-  // Note: Mouse wheel support temporarily disabled to prevent escape sequences in chat
-  // Users can use arrow keys for scrolling instead
-
   // Add our custom keypress handler
   process.stdin.on('keypress', (str: string, key: any) => {
     // Filter out mouse events from keypress to prevent them appearing in chat
@@ -859,7 +674,9 @@ function setupSubagentKeyHandler(rl: any, onExit: () => void) {
       exitSubagentBuffer(rl)
       onExit()
       return
-    } // Handle chat input (always active)
+    }
+
+    // Handle chat input (always active)
     if (key && key.name === 'return') {
       // Send message
       if (chatInput.trim()) {
@@ -980,8 +797,6 @@ function setupSubagentKeyHandler(rl: any, onExit: () => void) {
     // Force stdin to be readable to ensure keypress events are captured
     process.stdin.resume()
   }
-
-  // Mouse wheel support disabled to prevent escape sequences in chat input
 }
 
 /**
@@ -1017,10 +832,6 @@ export function cleanupSubagentBuffer() {
   isStreaming = false
   streamingUpdateBuffer = ''
   userHasManuallyScrolled = false
-  if (streamingUpdateTimer) {
-    clearTimeout(streamingUpdateTimer)
-    streamingUpdateTimer = null
-  }
 
   // Clean up render buffer
   if (pendingRender) {
@@ -1028,11 +839,6 @@ export function cleanupSubagentBuffer() {
     pendingRender = null
   }
   renderBuffer = ''
-  isStreaming = false
-  streamingUpdateBuffer = ''
-  userHasManuallyScrolled = false
-
-  // Mouse reporting was not enabled
 
   // Restore normal terminal mode
   if (process.stdin.isTTY) {

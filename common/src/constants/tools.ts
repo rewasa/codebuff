@@ -2,7 +2,7 @@ import { ToolResultPart } from 'ai'
 import { closeXml } from '../util/xml'
 
 export const toolNameParam = 'codebuff_tool_name'
-export const endsAgentStepParam = 'codebuff_end_step'
+export const endsAgentStepParam = 'codebuff_easp'
 export const toolXmlName = 'codebuff_tool_call'
 export const startToolTag = `<${toolXmlName}>\n`
 export const endToolTag = `\n</${toolXmlName}>`
@@ -22,11 +22,11 @@ export const toolNames = [
   'run_terminal_command',
   'send_agent_message',
   'set_messages',
+  'set_output',
   'spawn_agents',
   'spawn_agents_async',
   'str_replace',
   'think_deeply',
-  'update_report',
   'update_subgoal',
   'web_search',
   'write_file',
@@ -58,7 +58,7 @@ export const toolSchema = {
   send_agent_message: ['target_agent_id', 'prompt', 'params'],
   spawn_agents: ['agents'],
   spawn_agents_async: ['agents'],
-  update_report: ['json_update'],
+  set_output: [],
 
   // Documentation tool
   read_docs: ['libraryTitle', 'topic', 'max_tokens'],
@@ -81,19 +81,14 @@ export const getToolCallString = (
   params: Record<string, any>,
   endsAgentStep: boolean
 ) => {
-  return [
-    startToolTag,
-    JSON.stringify(
-      {
-        [toolNameParam]: toolName,
-        ...params,
-        [endsAgentStepParam]: endsAgentStep,
-      },
-      null,
-      2
-    ),
-    endToolTag,
-  ].join('')
+  const obj: Record<string, any> = {
+    [toolNameParam]: toolName,
+    ...params,
+  }
+  if (endsAgentStep) {
+    obj[endsAgentStepParam] = true
+  }
+  return [startToolTag, JSON.stringify(obj, null, 2), endToolTag].join('')
 }
 
 export type StringToolResultPart = Omit<ToolResultPart, 'type'> & {

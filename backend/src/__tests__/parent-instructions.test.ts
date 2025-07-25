@@ -1,11 +1,10 @@
 import { AgentState } from '@codebuff/common/types/session-state'
 import { FileTreeNode, ProjectFileContext } from '@codebuff/common/util/file'
-import { afterEach, beforeEach, describe, expect, it } from 'bun:test'
+import { describe, expect, it } from 'bun:test'
 
 import { DynamicAgentTemplate } from '@codebuff/common/types/dynamic-agent-template'
-import { agentRegistry } from '../templates/agent-registry'
+import { getAllAgentTemplates } from '../templates/agent-registry'
 import { collectParentInstructions } from '../templates/strings'
-import { AgentTemplate } from '../templates/types'
 
 // Helper to create a mock ProjectFileContext
 const createMockFileContext = (
@@ -44,14 +43,6 @@ const createMockFileContext = (
 })
 
 describe('Parent Instructions Injection', () => {
-  beforeEach(() => {
-    agentRegistry.reset()
-  })
-
-  afterEach(() => {
-    agentRegistry.reset()
-  })
-
   it('should inject parent instructions into userInputPrompt', async () => {
     // Mock file context with agent templates
     const fileContext = createMockFileContext({
@@ -101,12 +92,10 @@ describe('Parent Instructions Injection', () => {
     })
 
     // Initialize the registry
-    await agentRegistry.initialize(fileContext)
+    const { agentRegistry } = await getAllAgentTemplates({ fileContext })
 
     // Get the researcher template
-    const researcherTemplate = agentRegistry.getTemplate(
-      'researcher'
-    ) as AgentTemplate
+    const researcherTemplate = agentRegistry['researcher']
     expect(researcherTemplate).toBeDefined()
 
     // Create mock agent state
@@ -117,7 +106,7 @@ describe('Parent Instructions Injection', () => {
       subagents: [],
       messageHistory: [],
       stepsRemaining: 10,
-      report: {},
+      output: undefined,
     }
 
     // Test parent instructions collection directly
@@ -158,24 +147,11 @@ describe('Parent Instructions Injection', () => {
     })
 
     // Initialize the registry
-    await agentRegistry.initialize(fileContext)
+    const { agentRegistry } = await getAllAgentTemplates({ fileContext })
 
     // Get the researcher template
-    const researcherTemplate = agentRegistry.getTemplate(
-      'researcher'
-    ) as AgentTemplate
+    const researcherTemplate = agentRegistry['researcher']
     expect(researcherTemplate).toBeDefined()
-
-    // Create mock agent state
-    const agentState: AgentState = {
-      agentId: 'test-agent',
-      agentType: 'researcher',
-      agentContext: {},
-      subagents: [],
-      messageHistory: [],
-      stepsRemaining: 10,
-      report: {},
-    }
 
     // Test parent instructions collection directly
     const parentInstructions = await collectParentInstructions(
@@ -256,24 +232,11 @@ describe('Parent Instructions Injection', () => {
     })
 
     // Initialize the registry
-    await agentRegistry.initialize(fileContext)
+    const { agentRegistry } = await getAllAgentTemplates({ fileContext })
 
     // Get the researcher template
-    const researcherTemplate = agentRegistry.getTemplate(
-      'researcher'
-    ) as AgentTemplate
+    const researcherTemplate = agentRegistry['researcher']
     expect(researcherTemplate).toBeDefined()
-
-    // Create mock agent state
-    const agentState: AgentState = {
-      agentId: 'test-agent',
-      agentType: 'researcher',
-      agentContext: {},
-      subagents: [],
-      messageHistory: [],
-      stepsRemaining: 10,
-      report: {},
-    }
 
     // Test parent instructions collection directly
     const parentInstructions = await collectParentInstructions(

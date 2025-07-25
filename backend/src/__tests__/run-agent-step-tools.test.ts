@@ -5,7 +5,9 @@ import { getToolCallString } from '@codebuff/common/constants/tools'
 import { getInitialSessionState } from '@codebuff/common/types/session-state'
 import { ProjectFileContext } from '@codebuff/common/util/file'
 import {
+  afterAll,
   afterEach,
+  beforeAll,
   beforeEach,
   describe,
   expect,
@@ -16,40 +18,46 @@ import {
 import { WebSocket } from 'ws'
 
 // Mock imports
+import {
+  clearMockedModules,
+  mockModule,
+} from '@codebuff/common/testing/mock-modules'
 import * as aisdk from '../llm-apis/vercel-ai-sdk/ai-sdk'
 import { runAgentStep } from '../run-agent-step'
-import * as tools from '../tools'
+import { getAllAgentTemplates } from '../templates/agent-registry'
 import * as websocketAction from '../websockets/websocket-action'
 
-// Mock logger
-mock.module('../util/logger', () => ({
-  logger: {
-    debug: () => {},
-    error: () => {},
-    info: () => {},
-    warn: () => {},
-  },
-  withLoggerContext: async (context: any, fn: () => Promise<any>) => fn(),
-}))
-
-// Mock agent templates to include update_report in base
-mock.module('../templates/agent-list', () => {
-  const { agentTemplates } = require('../templates/agent-list')
-  return {
-    agentTemplates: {
-      ...agentTemplates,
-      base: {
-        ...agentTemplates.base,
-        toolNames: [
-          ...agentTemplates.base.toolNames,
-          'update_report', // Add this tool
-        ],
-      },
-    },
-  }
-})
-
 describe('runAgentStep - update_report tool', () => {
+  beforeAll(() => {
+    // Mock logger
+    mockModule('@codebuff/backend/util/logger', () => ({
+      logger: {
+        debug: () => {},
+        error: () => {},
+        info: () => {},
+        warn: () => {},
+      },
+      withLoggerContext: async (context: any, fn: () => Promise<any>) => fn(),
+    }))
+
+    // Mock agent templates to include update_report in base
+    mockModule('@codebuff/backend/templates/agent-list', () => {
+      const { agentTemplates } = require('../templates/agent-list')
+      return {
+        agentTemplates: {
+          ...agentTemplates,
+          base: {
+            ...agentTemplates.base,
+            toolNames: [
+              ...agentTemplates.base.toolNames,
+              'update_report', // Add this tool
+            ],
+          },
+        },
+      }
+    })
+  })
+
   beforeEach(() => {
     // Mock analytics and tracing
     spyOn(analytics, 'initAnalytics').mockImplementation(() => {})
@@ -57,27 +65,6 @@ describe('runAgentStep - update_report tool', () => {
     spyOn(analytics, 'trackEvent').mockImplementation(() => {})
     spyOn(bigquery, 'insertTrace').mockImplementation(() =>
       Promise.resolve(true)
-    )
-
-    // Mock the readFiles function from tools.ts
-    spyOn(tools, 'readFiles').mockImplementation(
-      async (paths: string[], projectRoot: string) => {
-        const results: Record<string, string | null> = {}
-        paths.forEach((p) => {
-          if (p === 'src/auth.ts') {
-            results[p] = 'export function authenticate() { return true; }'
-          } else if (p === 'src/user.ts') {
-            results[p] = 'export interface User { id: string; name: string; }'
-          } else if (p === 'src/components/auth/login.tsx') {
-            results[p] = 'export function Login() { return <div>Login</div>; }'
-          } else if (p === 'src/utils/validation.ts') {
-            results[p] = 'export function validate() { return true; }'
-          } else {
-            results[p] = null
-          }
-        })
-        return results
-      }
     )
 
     spyOn(websocketAction, 'requestFiles').mockImplementation(
@@ -122,6 +109,10 @@ describe('runAgentStep - update_report tool', () => {
     mock.restore()
   })
 
+  afterAll(() => {
+    clearMockedModules()
+  })
+
   class MockWebSocket {
     send(msg: string) {}
     close() {}
@@ -155,17 +146,17 @@ describe('runAgentStep - update_report tool', () => {
     agentTemplates: {},
   }
 
-  it('should update report with simple key-value pair', async () => {
+  it('should set output with simple key-value pair', async () => {
     const mockResponse =
       getToolCallString(
-        'update_report',
+        'set_output',
         {
-          json_update: {
-            message: 'Hi',
-          },
+          message: 'Hi',
         },
         false
-      ) + getToolCallString('end_turn', {}, true)
+      ) +
+      '\n\n' +
+      getToolCallString('end_turn', {}, true)
 
     spyOn(aisdk, 'promptAiSdkStream').mockImplementation(async function* () {
       yield mockResponse
@@ -173,6 +164,9 @@ describe('runAgentStep - update_report tool', () => {
 
     const sessionState = getInitialSessionState(mockFileContext)
     const agentState = sessionState.mainAgentState
+    const { agentRegistry } = await getAllAgentTemplates({
+      fileContext: mockFileContext,
+    })
 
     const result = await runAgentStep(
       new MockWebSocket() as unknown as WebSocket,
@@ -184,6 +178,7 @@ describe('runAgentStep - update_report tool', () => {
         onResponseChunk: () => {},
         agentType: 'base',
         fileContext: mockFileContext,
+        agentRegistry,
         agentState,
         prompt: 'Analyze the codebase',
         params: undefined,
@@ -192,22 +187,20 @@ describe('runAgentStep - update_report tool', () => {
       }
     )
 
-    expect(result.agentState.report).toEqual({
+    expect(result.agentState.output).toEqual({
       message: 'Hi',
     })
     expect(result.shouldEndTurn).toBe(true)
   })
 
-  it('should update report with json_update', async () => {
+  it('should set output with complex data', async () => {
     const mockResponse =
       getToolCallString(
-        'update_report',
+        'set_output',
         {
-          json_update: {
-            message: 'Analysis complete',
-            status: 'success',
-            findings: ['Bug in auth.ts', 'Missing validation'],
-          },
+          message: 'Analysis complete',
+          status: 'success',
+          findings: ['Bug in auth.ts', 'Missing validation'],
         },
         false
       ) + getToolCallString('end_turn', {}, true)
@@ -219,6 +212,9 @@ describe('runAgentStep - update_report tool', () => {
 
     const sessionState = getInitialSessionState(mockFileContext)
     const agentState = sessionState.mainAgentState
+    const { agentRegistry } = await getAllAgentTemplates({
+      fileContext: mockFileContext,
+    })
 
     const result = await runAgentStep(
       new MockWebSocket() as unknown as WebSocket,
@@ -230,6 +226,7 @@ describe('runAgentStep - update_report tool', () => {
         onResponseChunk: () => {},
         agentType: 'base',
         fileContext: mockFileContext,
+        agentRegistry,
         agentState,
         prompt: 'Analyze the codebase',
         params: undefined,
@@ -238,7 +235,7 @@ describe('runAgentStep - update_report tool', () => {
       }
     )
 
-    expect(result.agentState.report).toEqual({
+    expect(result.agentState.output).toEqual({
       message: 'Analysis complete',
       status: 'success',
       findings: ['Bug in auth.ts', 'Missing validation'],
@@ -246,15 +243,13 @@ describe('runAgentStep - update_report tool', () => {
     expect(result.shouldEndTurn).toBe(true)
   })
 
-  it('should merge with existing report data', async () => {
+  it('should replace existing output data', async () => {
     const mockResponse =
       getToolCallString(
-        'update_report',
+        'set_output',
         {
-          json_update: {
-            newField: 'new value',
-            existingField: 'updated value',
-          },
+          newField: 'new value',
+          existingField: 'updated value',
         },
         false
       ) + getToolCallString('end_turn', {}, true)
@@ -265,11 +260,14 @@ describe('runAgentStep - update_report tool', () => {
 
     const sessionState = getInitialSessionState(mockFileContext)
     const agentState = sessionState.mainAgentState
-    // Pre-populate the report with existing data
-    agentState.report = {
+    // Pre-populate the output with existing data
+    agentState.output = {
       existingField: 'original value',
       anotherField: 'unchanged',
     }
+    const { agentRegistry } = await getAllAgentTemplates({
+      fileContext: mockFileContext,
+    })
 
     const result = await runAgentStep(
       new MockWebSocket() as unknown as WebSocket,
@@ -281,30 +279,25 @@ describe('runAgentStep - update_report tool', () => {
         onResponseChunk: () => {},
         agentType: 'base',
         fileContext: mockFileContext,
+        agentRegistry,
         agentState,
-        prompt: 'Update the report',
+        prompt: 'Update the output',
         params: undefined,
         assistantMessage: undefined,
         assistantPrefix: undefined,
       }
     )
 
-    expect(result.agentState.report).toEqual({
-      existingField: 'updated value', // Should be updated
-      anotherField: 'unchanged', // Should remain unchanged
-      newField: 'new value', // Should be added
+    expect(result.agentState.output).toEqual({
+      newField: 'new value',
+      existingField: 'updated value',
     })
   })
 
-  it('should handle empty json_update parameter', async () => {
+  it('should handle empty output parameter', async () => {
     const mockResponse =
-      getToolCallString(
-        'update_report',
-        {
-          json_update: {},
-        },
-        false
-      ) + getToolCallString('end_turn', {}, true)
+      getToolCallString('set_output', {}, false) +
+      getToolCallString('end_turn', {}, true)
 
     spyOn(aisdk, 'promptAiSdkStream').mockImplementation(async function* () {
       yield mockResponse
@@ -312,7 +305,10 @@ describe('runAgentStep - update_report tool', () => {
 
     const sessionState = getInitialSessionState(mockFileContext)
     const agentState = sessionState.mainAgentState
-    agentState.report = { existingField: 'value' }
+    agentState.output = { existingField: 'value' }
+    const { agentRegistry } = await getAllAgentTemplates({
+      fileContext: mockFileContext,
+    })
 
     const result = await runAgentStep(
       new MockWebSocket() as unknown as WebSocket,
@@ -324,6 +320,7 @@ describe('runAgentStep - update_report tool', () => {
         onResponseChunk: () => {},
         agentType: 'base',
         fileContext: mockFileContext,
+        agentRegistry,
         agentState,
         prompt: 'Update with empty object',
         params: undefined,
@@ -332,9 +329,7 @@ describe('runAgentStep - update_report tool', () => {
       }
     )
 
-    // Should preserve existing report data
-    expect(result.agentState.report).toEqual({
-      existingField: 'value',
-    })
+    // Should replace with empty object
+    expect(result.agentState.output).toEqual({})
   })
 })

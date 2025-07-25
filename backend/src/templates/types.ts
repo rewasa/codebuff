@@ -23,7 +23,8 @@ export type AgentTemplate<
     prompt?: z.ZodSchema<P>
     params?: z.ZodSchema<T>
   }
-  outputMode: 'last_message' | 'report' | 'all_messages'
+  outputMode: 'last_message' | 'all_messages' | 'json'
+  outputSchema?: z.ZodSchema<any>
   includeMessageHistory: boolean
   toolNames: ToolName[]
   spawnableAgents: AgentTemplateType[]
@@ -38,7 +39,7 @@ export type AgentTemplate<
   userInputPrompt: string
   agentStepPrompt: string
 
-  handleStep?: StepHandler<P, T> | string // Function or string of the generator code for running in a sandbox
+  handleSteps?: StepHandler<P, T> | string // Function or string of the generator code for running in a sandbox
 }
 
 export type StepGenerator = Generator<
@@ -54,6 +55,7 @@ export type StepHandler<
 
 const placeholderNames = [
   'AGENT_NAME',
+  'AGENTS_PROMPT',
   'CONFIG_SCHEMA',
   'FILE_TREE_PROMPT',
   'GIT_CHANGES_PROMPT',

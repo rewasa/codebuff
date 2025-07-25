@@ -1,5 +1,5 @@
 // TODO: optimize this to not be O(n^2)
-export function parsePartialJsonObject(content: string): {
+export function parsePartialJsonObjectSingle(content: string): {
   lastParamComplete: boolean
   params: any
 } {
@@ -7,13 +7,24 @@ export function parsePartialJsonObject(content: string): {
     return { lastParamComplete: true, params: JSON.parse(content) }
   } catch (error) {}
 
-  try {
-    return { lastParamComplete: true, params: JSON.parse(content + '}') }
-  } catch (error) {}
+  if (!content.match(/\d$/)) {
+    try {
+      return { lastParamComplete: true, params: JSON.parse(content + '}') }
+    } catch (error) {}
+  }
 
   try {
     return { lastParamComplete: false, params: JSON.parse(content + '"}') }
   } catch (error) {}
+
+  if (content.endsWith('\\')) {
+    try {
+      return {
+        lastParamComplete: false,
+        params: JSON.parse(content.slice(0, -1) + '"}'),
+      }
+    } catch (error) {}
+  }
 
   let lastIndex = content.lastIndexOf(',')
   while (lastIndex > 0) {
@@ -32,24 +43,36 @@ export function parsePartialJsonObject(content: string): {
 
 export function getPartialJsonDelta(
   content: string,
-  previous: Record<string, any>
+  previous: string
 ): {
   delta: Record<string, any>
   result: Record<string, any>
   lastParam: { key: string | undefined; complete: boolean }
 } {
-  const { lastParamComplete, params: current } = parsePartialJsonObject(content)
+  if (!content.startsWith(previous)) {
+    throw new Error(
+      `Content must be previous content plus new content. Content ${JSON.stringify(content)} does not start with previous content ${JSON.stringify(previous)}`
+    )
+  }
+  const { lastParamComplete, params } = parsePartialJsonObjectSingle(content)
+  const lastParam = Object.keys(params).pop()
 
-  const entries = Object.entries(current)
-  const lastKey = (entries[entries.length - 1] ?? [undefined])[0]
+  const { lastParamComplete: prevLastParamComplete, params: prevParams } =
+    parsePartialJsonObjectSingle(previous)
+  const prevLastParam = Object.keys(prevParams).pop()
+
+  const entries = Object.entries(params)
 
   const delta: Record<string, any> = {}
-  for (const [key, value] of Object.entries(current)) {
-    if (previous[key] === value) {
+  for (const [key, value] of entries) {
+    if (prevParams[key] === value) {
+      if (prevLastParam === key && !prevLastParamComplete) {
+        delta[key] = ''
+      }
       continue
     }
     if (typeof value === 'string') {
-      delta[key] = value.slice((previous[key] ?? '').length)
+      delta[key] = value.slice((prevParams[key] ?? '').length)
     } else {
       delta[key] = value
     }
@@ -57,10 +80,13 @@ export function getPartialJsonDelta(
 
   return {
     delta,
-    result: current,
+    result: params,
     lastParam: {
-      key: lastKey,
-      complete: lastParamComplete,
+      key: lastParam,
+      complete:
+        prevLastParam === lastParam
+          ? lastParamComplete && !prevLastParamComplete
+          : lastParamComplete,
     },
   }
 }

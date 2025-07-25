@@ -2,9 +2,15 @@ import * as bigquery from '@codebuff/bigquery'
 import * as analytics from '@codebuff/common/analytics'
 import { TEST_USER_ID } from '@codebuff/common/constants'
 import { getToolCallString } from '@codebuff/common/constants/tools'
+import {
+  clearMockedModules,
+  mockModule,
+} from '@codebuff/common/testing/mock-modules'
 import { getInitialSessionState } from '@codebuff/common/types/session-state'
 import {
+  afterAll,
   afterEach,
+  beforeAll,
   beforeEach,
   describe,
   expect,
@@ -19,21 +25,24 @@ import * as liveUserInputs from '../live-user-inputs'
 import * as context7Api from '../llm-apis/context7-api'
 import * as aisdk from '../llm-apis/vercel-ai-sdk/ai-sdk'
 import { runAgentStep } from '../run-agent-step'
+import { getAllAgentTemplates } from '../templates/agent-registry'
 import * as websocketAction from '../websockets/websocket-action'
 import { MockWebSocket, mockFileContext } from './test-utils'
 
-// Mock logger
-mock.module('../util/logger', () => ({
-  logger: {
-    debug: () => {},
-    error: () => {},
-    info: () => {},
-    warn: () => {},
-  },
-  withLoggerContext: async (context: any, fn: () => Promise<any>) => fn(),
-}))
-
 describe('read_docs tool with researcher agent', () => {
+  beforeAll(() => {
+    // Mock logger
+    mockModule('@codebuff/backend/util/logger', () => ({
+      logger: {
+        debug: () => {},
+        error: () => {},
+        info: () => {},
+        warn: () => {},
+      },
+      withLoggerContext: async (context: any, fn: () => Promise<any>) => fn(),
+    }))
+  })
+
   beforeEach(() => {
     // Mock analytics and tracing
     spyOn(analytics, 'initAnalytics').mockImplementation(() => {})
@@ -73,6 +82,10 @@ describe('read_docs tool with researcher agent', () => {
     mock.restore()
   })
 
+  afterAll(() => {
+    clearMockedModules()
+  })
+
   // MockWebSocket and mockFileContext imported from test-utils
 
   test('should successfully fetch documentation with basic query', async () => {
@@ -101,6 +114,9 @@ describe('read_docs tool with researcher agent', () => {
       ...sessionState.mainAgentState,
       agentType: 'researcher' as const,
     }
+    const { agentRegistry } = await getAllAgentTemplates({
+      fileContext: mockFileContext,
+    })
 
     const { agentState: newAgentState } = await runAgentStep(
       new MockWebSocket() as unknown as WebSocket,
@@ -112,6 +128,7 @@ describe('read_docs tool with researcher agent', () => {
         onResponseChunk: () => {},
         agentType: 'researcher',
         fileContext: mockFileContext,
+        agentRegistry,
         agentState,
         prompt: 'Get React documentation',
         params: undefined,
@@ -166,6 +183,9 @@ describe('read_docs tool with researcher agent', () => {
       ...sessionState.mainAgentState,
       agentType: 'researcher' as const,
     }
+    const { agentRegistry } = await getAllAgentTemplates({
+      fileContext: mockFileContext,
+    })
 
     await runAgentStep(new MockWebSocket() as unknown as WebSocket, {
       userId: TEST_USER_ID,
@@ -175,6 +195,7 @@ describe('read_docs tool with researcher agent', () => {
       onResponseChunk: () => {},
       agentType: 'researcher',
       fileContext: mockFileContext,
+      agentRegistry,
       agentState,
       prompt: 'Get React hooks documentation',
       params: undefined,
@@ -214,6 +235,9 @@ describe('read_docs tool with researcher agent', () => {
       ...sessionState.mainAgentState,
       agentType: 'researcher' as const,
     }
+    const { agentRegistry } = await getAllAgentTemplates({
+      fileContext: mockFileContext,
+    })
 
     const { agentState: newAgentState } = await runAgentStep(
       new MockWebSocket() as unknown as WebSocket,
@@ -225,6 +249,7 @@ describe('read_docs tool with researcher agent', () => {
         onResponseChunk: () => {},
         agentType: 'researcher',
         fileContext: mockFileContext,
+        agentRegistry,
         agentState,
         prompt: 'Get documentation for NonExistentLibrary',
         params: undefined,
@@ -273,6 +298,9 @@ describe('read_docs tool with researcher agent', () => {
       ...sessionState.mainAgentState,
       agentType: 'researcher' as const,
     }
+    const { agentRegistry } = await getAllAgentTemplates({
+      fileContext: mockFileContext,
+    })
 
     const { agentState: newAgentState } = await runAgentStep(
       new MockWebSocket() as unknown as WebSocket,
@@ -284,6 +312,7 @@ describe('read_docs tool with researcher agent', () => {
         onResponseChunk: () => {},
         agentType: 'researcher',
         fileContext: mockFileContext,
+        agentRegistry,
         agentState,
         prompt: 'Get React documentation',
         params: undefined,
@@ -332,6 +361,9 @@ describe('read_docs tool with researcher agent', () => {
       ...sessionState.mainAgentState,
       agentType: 'researcher' as const,
     }
+    const { agentRegistry } = await getAllAgentTemplates({
+      fileContext: mockFileContext,
+    })
 
     const { agentState: newAgentState } = await runAgentStep(
       new MockWebSocket() as unknown as WebSocket,
@@ -343,6 +375,7 @@ describe('read_docs tool with researcher agent', () => {
         onResponseChunk: () => {},
         agentType: 'researcher',
         fileContext: mockFileContext,
+        agentRegistry,
         agentState,
         prompt: 'Get React server components documentation',
         params: undefined,
@@ -389,6 +422,9 @@ describe('read_docs tool with researcher agent', () => {
       ...sessionState.mainAgentState,
       agentType: 'researcher' as const,
     }
+    const { agentRegistry } = await getAllAgentTemplates({
+      fileContext: mockFileContext,
+    })
 
     const { agentState: newAgentState } = await runAgentStep(
       new MockWebSocket() as unknown as WebSocket,
@@ -400,6 +436,7 @@ describe('read_docs tool with researcher agent', () => {
         onResponseChunk: () => {},
         agentType: 'researcher',
         fileContext: mockFileContext,
+        agentRegistry,
         agentState,
         prompt: 'Get React documentation',
         params: undefined,

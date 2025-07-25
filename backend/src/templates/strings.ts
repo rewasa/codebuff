@@ -4,26 +4,31 @@ import {
   AgentState,
   AgentTemplateType,
 } from '@codebuff/common/types/session-state'
+import { z } from 'zod/v4'
 
 import {
   getGitChangesPrompt,
   getProjectFileTreePrompt,
   getSystemInfoPrompt,
 } from '../system-prompt/prompts'
-import { getShortToolInstructions, getToolsInstructions } from '../tools'
+import {
+  getShortToolInstructions,
+  getToolsInstructions,
+} from '../tools/prompts'
 
 import { renderToolResults, ToolName } from '@codebuff/common/constants/tools'
 import { ProjectFileContext } from '@codebuff/common/util/file'
 import { escapeString, generateCompactId } from '@codebuff/common/util/string'
+import { parseUserMessage } from '../util/messages'
 import { agentTemplates } from './agent-list'
+import { type AgentRegistry } from './agent-registry'
+import { buildSpawnableAgentsDescription } from './prompts'
 import {
+  AgentTemplate,
   PLACEHOLDER,
   PlaceholderValue,
   placeholderValues,
-  AgentTemplate,
 } from './types'
-import type { AgentRegistry } from './agent-registry'
-import { parseUserMessage } from '../util/messages'
 
 export async function formatPrompt(
   prompt: string,
@@ -45,12 +50,9 @@ export async function formatPrompt(
     ? parseUserMessage(lastUserMessage.content as string)
     : undefined
 
-  // Initialize agent registry to ensure dynamic agents are available
-  await agentRegistry.initialize(fileContext)
-
   const toInject: Record<PlaceholderValue, string> = {
     [PLACEHOLDER.AGENT_NAME]: agentState.agentType
-      ? agentRegistry.getAgentName(agentState.agentType) ||
+      ? agentRegistry[agentState.agentType]?.name ||
         agentTemplates[agentState.agentType]?.name ||
         'Unknown Agent'
       : 'Buffy',
@@ -64,7 +66,11 @@ export async function formatPrompt(
     [PLACEHOLDER.REMAINING_STEPS]: `${agentState.stepsRemaining!}`,
     [PLACEHOLDER.PROJECT_ROOT]: fileContext.projectRoot,
     [PLACEHOLDER.SYSTEM_INFO_PROMPT]: getSystemInfoPrompt(fileContext),
-    [PLACEHOLDER.TOOLS_PROMPT]: getToolsInstructions(tools, spawnableAgents),
+    [PLACEHOLDER.TOOLS_PROMPT]: getToolsInstructions(tools),
+    [PLACEHOLDER.AGENTS_PROMPT]: buildSpawnableAgentsDescription(
+      spawnableAgents,
+      agentRegistry
+    ),
     [PLACEHOLDER.USER_CWD]: fileContext.cwd,
     [PLACEHOLDER.USER_INPUT_PROMPT]: escapeString(lastUserInput ?? ''),
     [PLACEHOLDER.INITIAL_AGENT_PROMPT]: escapeString(intitialAgentPrompt ?? ''),
@@ -107,9 +113,8 @@ export async function collectParentInstructions(
   agentRegistry: AgentRegistry
 ): Promise<string[]> {
   const instructions: string[] = []
-  const allTemplates = agentRegistry.getAllTemplates()
 
-  for (const template of Object.values(allTemplates)) {
+  for (const template of Object.values(agentRegistry)) {
     if (template.parentInstructions) {
       const instruction = template.parentInstructions[agentType]
       if (instruction) {
@@ -146,23 +151,47 @@ export async function getAgentPrompt<T extends StringField | RequirePrompt>(
 
   // Add parent instructions for userInputPrompt
   if (promptType.type === 'userInputPrompt' && agentState.agentType) {
+    addendum +=
+      '\n\n' +
+      getShortToolInstructions(agentTemplate.toolNames) +
+      '\n\n' +
+      buildSpawnableAgentsDescription(
+        agentTemplate.spawnableAgents,
+        agentRegistry
+      )
+
     const parentInstructions = await collectParentInstructions(
       agentState.agentType,
       agentRegistry
     )
-
-    addendum +=
-      '\n\n' +
-      getShortToolInstructions(
-        agentTemplate.toolNames,
-        agentTemplate.spawnableAgents
-      )
 
     if (parentInstructions.length > 0) {
       addendum += '\n\n## Additional Instructions for Spawning Agents\n\n'
       addendum += parentInstructions
         .map((instruction) => `- ${instruction}`)
         .join('\n')
+    }
+
+    // Add output schema information if defined
+    if (agentTemplate.outputSchema) {
+      addendum += '\n\n## Output Schema\n\n'
+      addendum +=
+        'When using the set_output tool, your output must conform to this schema:\n\n'
+      addendum += '```json\n'
+      try {
+        // Convert Zod schema to JSON schema for display
+        const jsonSchema = z.toJSONSchema(agentTemplate.outputSchema)
+        delete jsonSchema['$schema'] // Remove the $schema field for cleaner display
+        addendum += JSON.stringify(jsonSchema, null, 2)
+      } catch {
+        // Fallback to a simple description
+        addendum += JSON.stringify(
+          { type: 'object', description: 'Output schema validation enabled' },
+          null,
+          2
+        )
+      }
+      addendum += '\n```'
     }
   }
 

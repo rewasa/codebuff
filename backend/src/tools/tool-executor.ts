@@ -1,25 +1,23 @@
+import type { ToolName } from '@codebuff/common/constants/tools'
+import type { ToolResult } from '@codebuff/common/types/session-state'
+import type { ProjectFileContext } from '@codebuff/common/util/file'
+import type { WebSocket } from 'ws'
+import type { AgentTemplate } from '../templates/types'
+import type { ClientToolCall, CodebuffToolCall } from './constants'
+import type { CodebuffToolHandlerFunction } from './handlers/handler-function-type'
+
 import {
   endsAgentStepParam,
   renderToolResults,
-  ToolName,
 } from '@codebuff/common/constants/tools'
-import { ToolResult } from '@codebuff/common/types/session-state'
-import { ProjectFileContext } from '@codebuff/common/util/file'
 import { generateCompactId } from '@codebuff/common/util/string'
-import { WebSocket } from 'ws'
 import z from 'zod/v4'
 import { checkLiveUserInput } from '../live-user-inputs'
-import { AgentTemplate } from '../templates/types'
 import { logger } from '../util/logger'
 import { asSystemMessage } from '../util/messages'
 import { requestToolCall } from '../websockets/websocket-action'
-import {
-  ClientToolCall,
-  CodebuffToolCall,
-  codebuffToolDefs,
-  CodebuffToolHandlerFunction,
-  codebuffToolHandlers,
-} from './constants'
+import { codebuffToolDefs } from './definitions/list'
+import { codebuffToolHandlers } from './handlers/list'
 
 export type ToolCallError = {
   toolName?: string
@@ -58,15 +56,17 @@ export function parseRawToolCall<T extends ToolName = ToolName>(
       codebuffToolDefs[validName].endsAgentStep
   }
 
-  const result = (
-    codebuffToolDefs[validName].parameters satisfies z.ZodObject as z.ZodObject
-  )
-    .extend({
-      [endsAgentStepParam]: z.literal(
-        codebuffToolDefs[validName].endsAgentStep
-      ),
-    })
-    .safeParse(processedParameters)
+  const paramsSchema = codebuffToolDefs[validName].endsAgentStep
+    ? (
+        codebuffToolDefs[validName]
+          .parameters satisfies z.ZodObject as z.ZodObject
+      ).extend({
+        [endsAgentStepParam]: z.literal(
+          codebuffToolDefs[validName].endsAgentStep
+        ),
+      })
+    : codebuffToolDefs[validName].parameters
+  const result = paramsSchema.safeParse(processedParameters)
 
   if (!result.success) {
     return {
@@ -81,7 +81,10 @@ export function parseRawToolCall<T extends ToolName = ToolName>(
     }
   }
 
-  delete result.data[endsAgentStepParam]
+  if (endsAgentStepParam in result.data) {
+    delete result.data[endsAgentStepParam]
+  }
+
   return {
     toolName: validName,
     args: result.data,
@@ -198,8 +201,8 @@ export function executeToolCall<T extends ToolName>(
 
   for (const [key, value] of Object.entries(stateUpdate ?? {})) {
     if (key === 'agentState' && typeof value === 'object' && value !== null) {
-      // Merge agentState updates instead of replacing the reference
-      Object.assign(state.agentState, value)
+      // Replace the agentState reference to ensure all updates are captured
+      state.agentState = value
     } else {
       state[key] = value
     }
