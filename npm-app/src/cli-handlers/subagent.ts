@@ -172,9 +172,9 @@ export function enterSubagentBuffer(
   needsFullRender = true // Force full render on entry
 
   // Display subagent content
-  updateSubagentContent()  // Set up key handler for ESC to exit
+  updateSubagentContent() // Set up key handler for ESC to exit
   setupSubagentKeyHandler(rl, onExit)
-  
+
   // Initialize cursor (visible, no blinking until pause)
   fakeCursorVisible = true
   lastInputTime = Date.now()
@@ -369,19 +369,11 @@ function cleanupTimers() {
 }
 
 function startMockStreaming(userMessage: string) {
-  // Mock responses based on user input - longer, more realistic responses
+  // Mock responses based on user input - cut in half for testing
   const responses = [
-    `I understand you're asking about "${userMessage}". Let me think through this step by step...
+    `I understand you're asking about "${userMessage}". Let me think through this step by step.
 
 First, I need to analyze the current codebase structure to understand how this relates to the existing implementation. Looking at the patterns I can see, there are several approaches we could take:
-
-1. **Direct Implementation**: We could implement this feature directly in the existing module, which would be the fastest approach but might not be the most maintainable long-term.
-
-2. **Modular Approach**: Alternatively, we could create a new module specifically for this functionality, which would provide better separation of concerns and make the code more testable.
-
-3. **Hybrid Solution**: We could also consider a hybrid approach that leverages existing utilities while adding new functionality where needed.
-
-Based on the current architecture, I'd recommend the modular approach because it aligns with the existing patterns in the codebase and will make future maintenance easier. Here's how we could structure it:
 
 \`\`\`typescript
 // New module structure
@@ -392,7 +384,7 @@ export interface ${userMessage.replace(/\s+/g, '')}Config {
 
 export class ${userMessage.replace(/\s+/g, '')}Manager {
   constructor(private config: ${userMessage.replace(/\s+/g, '')}Config) {}
-  
+
   async process(): Promise<void> {
     // Implementation here
   }
@@ -450,8 +442,8 @@ This approach provides a clean interface and makes the functionality easily exte
       cleanupTimers()
 
       // Final update with complete content
-      updateSubagentContent()        // Reset cursor state after streaming
-        onUserInput()
+      updateSubagentContent() // Reset cursor state after streaming
+      onUserInput()
 
       // Only auto-scroll to bottom if user hasn't manually scrolled away
       if (!userHasManuallyScrolled) {
@@ -486,39 +478,42 @@ function getCursorBlinkTiming() {
       invisibleDuration: 400,
     }
   }
-}function startFakeCursorBlinking() {
+}
+function startFakeCursorBlinking() {
   if (fakeCursorTimer) {
     clearTimeout(fakeCursorTimer)
   }
-  
+
   fakeCursorVisible = true
-  
+
   function scheduleNextBlink() {
     const timing = getCursorBlinkTiming()
-    const nextDelay = fakeCursorVisible ? timing.visibleDuration : timing.invisibleDuration
-    
+    const nextDelay = fakeCursorVisible
+      ? timing.visibleDuration
+      : timing.invisibleDuration
+
     fakeCursorTimer = setTimeout(() => {
       fakeCursorVisible = !fakeCursorVisible
       renderChatInputOnly({ immediate: true })
       scheduleNextBlink()
     }, nextDelay)
   }
-  
+
   scheduleNextBlink()
 }
 
 function onUserInput() {
   lastInputTime = Date.now()
-  
+
   // Stop current blinking and show cursor
   stopFakeCursorBlinking()
   fakeCursorVisible = true
-  
+
   // Clear any existing pause timer
   if (inputPauseTimer) {
     clearTimeout(inputPauseTimer)
   }
-  
+
   // Start new pause timer
   inputPauseTimer = setTimeout(() => {
     // Only start blinking if user hasn't typed recently
@@ -526,7 +521,7 @@ function onUserInput() {
       startFakeCursorBlinking()
     }
   }, INPUT_PAUSE_DELAY)
-  
+
   // Render immediately to show cursor
   renderChatInputOnly({ immediate: true })
 }
