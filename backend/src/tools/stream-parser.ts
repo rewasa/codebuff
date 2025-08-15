@@ -95,11 +95,28 @@ export async function processStreamWithTools<T extends string>(options: {
     messages,
   }
 
+  // Add a small scheduler so we can force ordering:
+  // 1) apply write/replace first, 2) then spawn agents, 3) then end_turn.
+  const deferredToolCalls: {
+    toolName: ToolName
+    input: Record<string, any>
+  }[] = []
+  const shouldDefer = (toolName: ToolName) =>
+    toolName === 'spawn_agents' ||
+    toolName === 'spawn_agent_inline' ||
+    toolName === 'spawn_agents_async' ||
+    toolName === 'end_turn'
+
   function toolCallback<T extends ToolName>(toolName: T) {
     return {
       onTagStart: () => {},
       onTagEnd: async (_: string, input: Record<string, string>) => {
-        // delegated to reusable helper
+        // Defer spawns and end_turn until after write/replace complete
+        if (shouldDefer(toolName)) {
+          deferredToolCalls.push({ toolName, input })
+          return
+        }
+        // Execute immediate tools (including write_file/str_replace) in-stream order
         previousToolCallFinished = executeToolCall({
           toolName,
           input,
@@ -154,7 +171,46 @@ export async function processStreamWithTools<T extends string>(options: {
     },
   ])
 
+  // Finish immediate tools first
   resolveStreamDonePromise()
+  await previousToolCallFinished
+
+  // Now execute deferred tools in enforced order (spawns first, end_turn last)
+  const deferredSpawns = deferredToolCalls.filter(
+    ({ toolName }) => toolName !== 'end_turn',
+  )
+  const deferredEnds = deferredToolCalls.filter(
+    ({ toolName }) => toolName === 'end_turn',
+  )
+
+  // Add helper to avoid duplication when executing deferred tool calls
+  const runDeferredCalls = (
+    calls: { toolName: ToolName; input: Record<string, any> }[],
+  ) => {
+    for (const { toolName, input } of calls) {
+      previousToolCallFinished = executeToolCall({
+        toolName,
+        input,
+        toolCalls,
+        toolResults,
+        previousToolCallFinished,
+        ws,
+        agentTemplate,
+        fileContext,
+        agentStepId,
+        clientSessionId,
+        userInputId,
+        fullResponse: fullResponseChunks.join(''),
+        onResponseChunk,
+        state,
+        userId,
+      })
+    }
+  }
+
+  runDeferredCalls(deferredSpawns)
+  runDeferredCalls(deferredEnds)
+
   await previousToolCallFinished
 
   return {
