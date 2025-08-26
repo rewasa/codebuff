@@ -23,6 +23,22 @@ export const base2 = (model: ModelName): Omit<SecretAgentDefinition, 'id'> => ({
         maxContextLength: {
           type: 'number',
         },
+        // Pass subgoals through so planner/editor can stay in sync
+        subgoals: {
+          type: 'array',
+          items: {
+            type: 'object',
+            properties: {
+              id: { type: 'string' },
+              objective: { type: 'string' },
+              status: {
+                type: 'string',
+                enum: ['NOT_STARTED', 'IN_PROGRESS', 'COMPLETE', 'ABORTED'],
+              },
+            },
+            required: ['id', 'objective', 'status'],
+          },
+        },
       },
       required: [],
     },
@@ -30,7 +46,14 @@ export const base2 = (model: ModelName): Omit<SecretAgentDefinition, 'id'> => ({
   outputMode: 'last_message',
   includeMessageHistory: true,
   toolNames: ['spawn_agent_inline', 'spawn_agents', 'add_message', 'end_turn'],
-  spawnableAgents: ['scout', 'planner', 'editor', 'reviewer', 'context-pruner'],
+  spawnableAgents: [
+    'git-committer',
+    'scout',
+    'planner',
+    'editor',
+    'reviewer',
+    'context-pruner',
+  ],
 
   systemPrompt: `You are Buffy, a strategic coding assistant that orchestrates complex coding tasks through specialized sub-agents.
 
@@ -62,7 +85,18 @@ ${PLACEHOLDER.GIT_CHANGES_PROMPT}
 - You should feel free to stop and ask the user for guidance if you're stuck or don't know what to try next, or need a clarification.
 - When prompting an agent, realize that many agents can already see the entire conversation history, so you can be brief in prompting them without needing to include much context.
 - Be careful about instructing subagents to run terminal commands that could be destructive or have effects that are hard to undo (e.g. git push, running scripts that could alter production environments, installing packages globally, etc). Don't do any of these unless the user explicitly asks you to.
-`,
+
+A great workflow for you would be:
+0. Determine if the task just needs a quick pass or if it needs more planning. If the former, spawn the "scout" agent to quickly scan the codebase and provide feedback.
+1. Spawn the "planner" agent to plan the task.
+2. Spawn the "editor" agent to write the code.
+3. Spawn the "reviewer" agent to review the code.
+
+Repeat steps 2 and 3 until the task is complete by feeding output from one to the other. If the task doesn't seem to be progressing towards completion, spawn the planner agent to help you step back and re-evaluate the best course of action.
+
+Subgoals:
+- Always pass the current params.subgoals when spawning planner/editor.
+- Read subgoals returned in their outputs and thread them into future spawns so they stay in sync.`,
 
   handleSteps: function* ({ prompt, params }) {
     let steps = 0

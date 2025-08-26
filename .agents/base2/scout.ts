@@ -1,8 +1,8 @@
+import { publisher } from '../constants'
 import {
   PLACEHOLDER,
   type SecretAgentDefinition,
 } from '../types/secret-agent-definition'
-import { publisher } from '../constants'
 
 const definition: SecretAgentDefinition = {
   id: 'scout',
@@ -10,7 +10,7 @@ const definition: SecretAgentDefinition = {
   model: 'openai/gpt-5-chat',
   displayName: 'Lewis & Clark',
   spawnableAgents: ['file-explorer', 'web-researcher', 'docs-researcher'],
-  toolNames: ['spawn_agents', 'read_files', 'end_turn'],
+  toolNames: ['spawn_agents', 'set_output', 'run_terminal_command', 'end_turn'],
 
   inputSchema: {
     prompt: {
@@ -18,7 +18,37 @@ const definition: SecretAgentDefinition = {
       description: 'Any question',
     },
   },
-  outputMode: 'last_message',
+  outputMode: 'structured_output',
+  outputSchema: {
+    type: 'object',
+    properties: {
+      summary: {
+        type: 'string',
+        description: 'A concise summary of the findings.',
+      },
+      suggestedSubgoals: {
+        type: 'array',
+        description: 'Optional list of suggested subgoals.',
+        items: {
+          type: 'object',
+          properties: {
+            objective: {
+              type: 'string',
+              description: 'The objective of the suggested subgoal.',
+            },
+            details: {
+              type: 'string',
+              description: 'Additional details or context for the subgoal.',
+            },
+          },
+          required: ['objective'],
+          additionalProperties: false,
+        },
+      },
+    },
+    required: ['summary'],
+    additionalProperties: false,
+  },
   includeMessageHistory: true,
 
   spawnerPrompt: `Spawn this agent when you need a quick answer to a question. Can search the codebase and the web.`,

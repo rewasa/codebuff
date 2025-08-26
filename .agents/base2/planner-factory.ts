@@ -1,9 +1,14 @@
-import { ModelName, ToolCall } from 'types/agent-definition'
 import { publisher } from '../constants'
 import {
   PLACEHOLDER,
   type SecretAgentDefinition,
 } from '../types/secret-agent-definition'
+
+import type {
+  AgentState as CommonAgentState,
+  Subgoal,
+} from '@codebuff/common/types/session-state'
+import type { ModelName, ToolCall } from 'types/agent-definition'
 
 export const plannerFactory = (
   model: ModelName,
@@ -19,16 +24,65 @@ export const plannerFactory = (
       type: 'string',
       description: 'The task to plan for',
     },
+    params: {
+      type: 'object',
+      properties: {
+        subgoals: {
+          type: 'array',
+          items: {
+            type: 'object',
+            properties: {
+              id: { type: 'string' },
+              objective: { type: 'string' },
+              status: {
+                type: 'string',
+                enum: ['NOT_STARTED', 'IN_PROGRESS', 'COMPLETE', 'ABORTED'],
+              },
+            },
+            required: ['id', 'objective', 'status'],
+          },
+        },
+      },
+      required: [],
+    },
   },
   outputMode: 'structured_output',
+  outputSchema: {
+    type: 'object',
+    properties: {
+      plan: {
+        type: 'string',
+        description: 'The comprehensive implementation plan',
+      },
+      subgoals: {
+        type: 'array',
+        description: 'Array of subgoals for tracking progress',
+        items: {
+          type: 'object',
+          properties: {
+            id: { type: 'string' },
+            objective: { type: 'string' },
+            status: {
+              type: 'string',
+              enum: ['NOT_STARTED', 'IN_PROGRESS', 'COMPLETE', 'ABORTED'],
+            },
+          },
+          required: ['id', 'objective', 'status'],
+        },
+      },
+    },
+    required: ['plan', 'subgoals'],
+  },
   includeMessageHistory: true,
-  toolNames: ['spawn_agents', 'read_files', 'end_turn', 'set_output'],
-  spawnableAgents: [
-    'file-explorer',
-    'web-researcher',
-    'docs-researcher',
-    'thinker-gpt-5-high',
+  toolNames: [
+    'spawn_agents',
+    'read_files',
+    'create_plan',
+    'add_subgoal',
+    'set_output',
+    'end_turn',
   ],
+  spawnableAgents: ['file-explorer', 'researcher', 'gemini-thinker-high'],
 
   systemPrompt: `You are an expert programmer, architect, researcher, and general problem solver.
 You spawn agents to help you gather information which will be used to create a plan.
@@ -36,30 +90,35 @@ You spawn agents to help you gather information which will be used to create a p
 ${PLACEHOLDER.FILE_TREE_PROMPT}
 ${PLACEHOLDER.KNOWLEDGE_FILES_CONTENTS}`,
 
-  instructionsPrompt: `You are gathering information which will be used to create a plan.
-  
-- It's helpful to spawn a file-explorer to find all the relevant parts of the codebase. In parallel as part of the same spawn_agents tool call, you may also spawn a web-researcher or docs-researcher to search the web or technical documentation for relevant information.
-- After you are satisfied with the information you have gathered from these agents, stop and use the end_turn tool. The plan will be created in a separate step. Do not spawn thinker-gpt-5-high in this step.`,
+  instructionsPrompt: `Create a comprehensive plan for the given task.
+
+Process:
+- Spawn a file-explorer to understand the relevant codebase. You may also spawn a researcher to search the web for relevant information at the same time.
+- After gathering information, spawn a thinker to analyze the best approach and craft a plan.
+
+Subgoals:
+- Identify concrete steps as subgoals and add them using the add_subgoal tool (with id, objective, and status).
+- Always include the current subgoals in your final set_output so the base agent can pass them to the editor.`,
 
   handleSteps: function* ({ prompt }) {
-    // Step 1: Gather information
-    const { agentState } = yield 'STEP_ALL'
-
-    // Step 2: Parse out all the file paths and read them.
-    const messagesBlob =
-      // Exclude the first two messages, which are system prompt + context
-      agentState.messageHistory
-        .slice(2)
-        .map((message) =>
-          typeof message.content === 'string'
-            ? message.content
-            : message.content
-                .map((content) => (content.type === 'text' ? content.text : ''))
-                .join('\n'),
-        )
-        .join('\n')
-
-    const filePaths = parseFilePathsFromToolResult(messagesBlob)
+    // Step 1: Spawn file-explorer and parse out the file paths
+    const { agentState: stateAfterFileExplorer } =
+      (yield 'STEP') as unknown as {
+        agentState: CommonAgentState
+        stepsComplete: boolean
+        toolResult: string | undefined
+      }
+    const { messageHistory } = stateAfterFileExplorer
+    const lastAssistantMessageIndex =
+      stateAfterFileExplorer.messageHistory.findLastIndex(
+        (message) => message.role === 'assistant',
+      )
+    const toolResultMessage = (messageHistory[
+      lastAssistantMessageIndex + 1
+    ] as { content: string }) ?? {
+      content: '',
+    }
+    const filePaths = parseFilePathsFromToolResult(toolResultMessage.content)
 
     yield {
       toolName: 'read_files',
@@ -81,10 +140,22 @@ ${PLACEHOLDER.KNOWLEDGE_FILES_CONTENTS}`,
       },
     }
 
+    // Include current subgoals from agentContext in the output
+    const subgoals = (
+      Object.entries(stateAfterFileExplorer.agentContext ?? {}) as Array<
+        [string, Subgoal]
+      >
+    ).map(([id, sg]) => ({
+      id,
+      objective: sg.objective ?? '',
+      status: sg.status ?? 'NOT_STARTED',
+    }))
+
     yield {
       toolName: 'set_output',
       input: {
         plan: deepThinkerToolResult,
+        subgoals,
       },
     }
 

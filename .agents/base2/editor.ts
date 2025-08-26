@@ -1,14 +1,18 @@
 import { publisher } from '../constants'
-
 import {
   PLACEHOLDER,
   type SecretAgentDefinition,
 } from '../types/secret-agent-definition'
 
+import type {
+  AgentState as CommonAgentState,
+  Subgoal,
+} from '@codebuff/common/types/session-state'
+
 const editor: SecretAgentDefinition = {
   id: 'editor',
   publisher,
-  model: 'anthropic/claude-4-sonnet-20250522',
+  model: 'openai/gpt-5',
   displayName: 'Code Editor',
   spawnerPrompt:
     'Expert code editor with access to tools to find and edit files, run terminal commands, and search the web. Can handle small to medium sized tasks, or work off of a plan for more complex tasks. For easy tasks, you can spawn this agent directly rather than invoking a scout or planner first.',
@@ -23,11 +27,67 @@ const editor: SecretAgentDefinition = {
         maxContextLength: {
           type: 'number',
         },
+        context: {
+          type: 'object',
+          description:
+            'Any information that should be passed to the agent to help it perform the task',
+        },
+        // Add subgoals so the editor can track and update them
+        subgoals: {
+          type: 'array',
+          items: {
+            type: 'object',
+            properties: {
+              id: { type: 'string' },
+              objective: { type: 'string' },
+              status: {
+                type: 'string',
+                enum: ['NOT_STARTED', 'IN_PROGRESS', 'COMPLETE', 'ABORTED'],
+              },
+            },
+            required: ['id', 'objective', 'status'],
+          },
+        },
       },
       required: [],
     },
   },
   outputMode: 'structured_output',
+  outputSchema: {
+    type: 'object',
+    properties: {
+      message: {
+        type: 'string',
+        description:
+          'Summary message of the changes made or response to user request',
+      },
+      edits: {
+        type: 'array',
+        description:
+          'Array of edit results from write_file and str_replace operations',
+        items: {
+          type: 'string',
+        },
+      },
+      subgoals: {
+        type: 'array',
+        description: 'Array of subgoals with their current status',
+        items: {
+          type: 'object',
+          properties: {
+            id: { type: 'string' },
+            objective: { type: 'string' },
+            status: {
+              type: 'string',
+              enum: ['NOT_STARTED', 'IN_PROGRESS', 'COMPLETE', 'ABORTED'],
+            },
+          },
+          required: ['id', 'objective', 'status'],
+        },
+      },
+    },
+    additionalProperties: true,
+  },
   includeMessageHistory: true,
   toolNames: [
     'read_files',
@@ -38,19 +98,26 @@ const editor: SecretAgentDefinition = {
     'spawn_agents',
     'add_message',
     'set_output',
+    'update_subgoal',
     'end_turn',
   ],
   spawnableAgents: ['file-explorer', 'web-researcher', 'docs-researcher'],
 
   systemPrompt: `You are an expert code editor with deep understanding of software engineering principles.
 
-# Core Mandates
+You are extremely skilled at:
+- Reading and understanding existing codebases
+- Following existing codebase patterns
+- Never duplicating existing code and always reusing existing code when possible
+- Making the minimal change necessary to implement the user request
+- Calling the set_output tool to with a clear explanation of the changes made or with an answer to the user's question
+- Not writing a final summary outside of the one that you include in the set_output tool
 
 - **Conventions:** Rigorously adhere to existing project conventions when reading or modifying code. Analyze surrounding code, tests, and configuration first.
 - **Libraries/Frameworks:** NEVER assume a library/framework is available or appropriate. Verify its established usage within the project (check imports, configuration files like 'package.json', 'Cargo.toml', 'requirements.txt', 'build.gradle', etc., or observe neighboring files) before employing it.
 - **Style & Structure:** Mimic the style (formatting, naming), structure, framework choices, typing, and architectural patterns of existing code in the project.
 - **Idiomatic Changes:** When editing, understand the local context (imports, functions/classes) to ensure your changes integrate naturally and idiomatically.
-- **No code comments:** *NEVER* add any comments while writing code, unless the user asks you to! *NEVER* talk to the user or describe your changes through comments. Do not edit comments that are separate from the code you are changing. 
+- **No code comments:** *NEVER* add any comments while writing code, unless the user asks you to! *NEVER* talk to the user or describe your changes through comments. Do not edit comments that are separate from the code you are changing.
 - **Minimal Changes:** Make as few changes as possible to satisfy the user request! Don't go beyond what the user has asked for.
 - **Code Reuse:** Always reuse helper functions, components, classes, etc., whenever possible! Don't reimplement what already exists elsewhere in the codebase.
 - **Security First:** Always apply security best practices. Never introduce code that exposes, logs, or commits secrets, API keys, or other sensitive information.
@@ -109,6 +176,11 @@ User: <tool_result>
 </example>
 - **Summarize with set_output:** You must use the set_output tool before finishing and include a clear explanation of the changes made or an answer to the user prompt. Do not write a separate summary outside of the set_output tool.
 
+- **Subgoals:** These are crucial to staying on track to solve the user's request.
+  - When you start work on a subgoal, mark it IN_PROGRESS using update_subgoal with a brief log of what you're doing.
+  - When you complete a subgoal, mark it COMPLETE and add a concise log.
+  - Always include the current subgoals in your final set_output so the base agent can pass the latest state back to the planner.
+
 ${PLACEHOLDER.KNOWLEDGE_FILES_CONTENTS}`,
 
   instructionsPrompt: `Implement the requested changes. Feel free to ignore the plan if it seems incorrect.
@@ -129,16 +201,48 @@ ${PLACEHOLDER.KNOWLEDGE_FILES_CONTENTS}`,
   handleSteps: function* ({ agentState: initialAgentState }) {
     const stepLimit = 20
     let stepCount = 0
-    let agentState = initialAgentState
+    let agentState = initialAgentState as CommonAgentState
 
     while (true) {
       stepCount++
 
-      const stepResult = yield 'STEP'
+      const stepResult = (yield 'STEP') as unknown as {
+        agentState: CommonAgentState
+        stepsComplete: boolean
+        toolResult: string | undefined
+      }
       agentState = stepResult.agentState // Capture the latest state
 
-      if (stepResult.stepsComplete) {
+      // Check if all subgoals have been attempted (none are NOT_STARTED)
+      const subgoals = Object.values(agentState.agentContext ?? {}) as Subgoal[]
+      const hasNotStartedSubgoals = subgoals.some(
+        (sg) => sg.status === 'NOT_STARTED',
+      )
+
+      // Only consider job done if LLM wants to complete AND all subgoals have been attempted
+      if (stepResult.stepsComplete && !hasNotStartedSubgoals) {
         break
+      }
+
+      // If LLM wants to complete but there are still NOT_STARTED subgoals, remind it to continue
+      if (stepResult.stepsComplete && hasNotStartedSubgoals) {
+        const notStartedSubgoals = subgoals.filter(
+          (sg) => sg.status === 'NOT_STARTED',
+        )
+        const subgoalSummary = notStartedSubgoals
+          .map((sg) => `- ${sg.objective || 'Unnamed subgoal'}`)
+          .join('\n')
+
+        yield {
+          toolName: 'add_message',
+          input: {
+            role: 'user',
+            content: `You still have subgoals that haven't been attempted yet. Please continue working on these remaining subgoals before finishing:\n\n${subgoalSummary}\n\nMark each subgoal as IN_PROGRESS when you start working on it, and COMPLETE when finished.`,
+          },
+        }
+
+        // Continue to next step to work on remaining subgoals
+        continue
       }
 
       // If we've reached within one of the step limit, ask LLM to summarize progress
@@ -153,7 +257,9 @@ ${PLACEHOLDER.KNOWLEDGE_FILES_CONTENTS}`,
         }
 
         // One final step to produce the summary
-        const finalStepResult = yield 'STEP'
+        const finalStepResult = (yield 'STEP') as unknown as {
+          agentState: CommonAgentState
+        }
         agentState = finalStepResult.agentState
         break
       }
@@ -201,11 +307,21 @@ ${PLACEHOLDER.KNOWLEDGE_FILES_CONTENTS}`,
       (edit) => edit.includes('successfully') && edit.includes('Changes made:'),
     )
 
+    // Gather latest subgoals from agentContext for output
+    const subgoals = (
+      Object.entries(agentState.agentContext ?? {}) as Array<[string, Subgoal]>
+    ).map(([id, sg]) => ({
+      id,
+      objective: sg.objective ?? '',
+      status: sg.status ?? 'NOT_STARTED',
+    }))
+
     yield {
       toolName: 'set_output',
       input: {
         ...output,
-        edits: successfulEdits,
+        edits: editToolResults,
+        subgoals,
       },
     }
   },
