@@ -82,7 +82,7 @@ export const plannerFactory = (
     'set_output',
     'end_turn',
   ],
-  spawnableAgents: ['file-explorer', 'researcher', 'gemini-thinker-high'],
+  spawnableAgents: ['file-explorer', 'researcher', 'thinker-gpt-5-high'],
 
   systemPrompt: `You are an expert programmer, architect, researcher, and general problem solver.
 You spawn agents to help you gather information which will be used to create a plan.
@@ -137,25 +137,6 @@ Subgoals:
             prompt: `Create a clear implementation plan for the following task, with a focus on simplicity and making the minimal changes necessary for an awesome implementation. Prompt: ${prompt}`,
           },
         ],
-      },
-    }
-
-    // Include current subgoals from agentContext in the output
-    const subgoals = (
-      Object.entries(stateAfterFileExplorer.agentContext ?? {}) as Array<
-        [string, Subgoal]
-      >
-    ).map(([id, sg]) => ({
-      id,
-      objective: sg.objective ?? '',
-      status: sg.status ?? 'NOT_STARTED',
-    }))
-
-    yield {
-      toolName: 'set_output',
-      input: {
-        plan: deepThinkerToolResult,
-        subgoals,
       },
     }
 

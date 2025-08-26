@@ -218,9 +218,16 @@ ${PLACEHOLDER.KNOWLEDGE_FILES_CONTENTS}`,
       const hasNotStartedSubgoals = subgoals.some(
         (sg) => sg.status === 'NOT_STARTED',
       )
+      const hasInProgressSubgoals = subgoals.some(
+        (sg) => sg.status === 'IN_PROGRESS',
+      )
 
-      // Only consider job done if LLM wants to complete AND all subgoals have been attempted
-      if (stepResult.stepsComplete && !hasNotStartedSubgoals) {
+      // Only consider job done if LLM wants to complete AND all subgoals have been attempted and resolved
+      if (
+        stepResult.stepsComplete &&
+        !hasNotStartedSubgoals &&
+        !hasInProgressSubgoals
+      ) {
         break
       }
 
@@ -242,6 +249,26 @@ ${PLACEHOLDER.KNOWLEDGE_FILES_CONTENTS}`,
         }
 
         // Continue to next step to work on remaining subgoals
+        continue
+      }
+
+      // If LLM wants to complete but there are IN_PROGRESS subgoals, ask to resolve them
+      if (stepResult.stepsComplete && hasInProgressSubgoals) {
+        const inProgressSubgoals = subgoals.filter(
+          (sg) => sg.status === 'IN_PROGRESS',
+        )
+        const subgoalSummary = inProgressSubgoals
+          .map((sg) => `- ${sg.objective || 'Unnamed subgoal'}`)
+          .join('\n')
+
+        yield {
+          toolName: 'add_message',
+          input: {
+            role: 'user',
+            content: `You still have subgoals marked as IN_PROGRESS. Before finishing, please resolve each by marking it as COMPLETE or ABORTED as appropriate:\n\n${subgoalSummary}`,
+          },
+        }
+
         continue
       }
 
@@ -307,21 +334,11 @@ ${PLACEHOLDER.KNOWLEDGE_FILES_CONTENTS}`,
       (edit) => edit.includes('successfully') && edit.includes('Changes made:'),
     )
 
-    // Gather latest subgoals from agentContext for output
-    const subgoals = (
-      Object.entries(agentState.agentContext ?? {}) as Array<[string, Subgoal]>
-    ).map(([id, sg]) => ({
-      id,
-      objective: sg.objective ?? '',
-      status: sg.status ?? 'NOT_STARTED',
-    }))
-
     yield {
       toolName: 'set_output',
       input: {
         ...output,
         edits: editToolResults,
-        subgoals,
       },
     }
   },
