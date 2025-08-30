@@ -4,7 +4,9 @@ import {
   type RunState,
 } from './run-state'
 import { changeFile } from './tools/change-file'
+import { codeSearch } from './tools/code-search'
 import { getFiles } from './tools/read-files'
+import { runFileChangeHooks } from './tools/run-file-change-hooks'
 import { runTerminalCommand } from './tools/run-terminal-command'
 import { WebSocketHandler } from './websocket-client'
 import {
@@ -330,6 +332,15 @@ export class CodebuffClient {
           ...input,
           cwd: input.cwd ?? this.cwd,
         } as Parameters<typeof runTerminalCommand>[0])
+      } else if (toolName === 'code_search') {
+        result = await codeSearch({
+          ...input,
+          cwd: input.cwd ?? this.cwd,
+        } as Parameters<typeof codeSearch>[0])
+      } else if (toolName === 'run_file_change_hooks') {
+        result = await runFileChangeHooks(
+          input as Parameters<typeof runFileChangeHooks>[0],
+        )
       } else {
         throw new Error(
           `Tool not implemented in SDK. Please provide an override or modify your agent to not use this tool: ${toolName}`,

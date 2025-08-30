@@ -1,27 +1,23 @@
+import { join } from 'path'
+
 import {
   scanCommandsDirectory,
   generateCommandsSection,
 } from './utils/command-scanner'
-import { join } from 'path'
+import { base } from '../factory/base'
 
-import type { AgentDefinition } from '../types/agent-definition'
+import type { SecretAgentDefinition } from '../types/secret-agent-definition'
 
-const definition: AgentDefinition = {
+const definition: SecretAgentDefinition = {
   id: 'codelayer-base',
   publisher: 'codelayer',
-  displayName: 'Codelayer Base Agent',
-  model: 'anthropic/claude-4-sonnet-20250522',
+  ...base('anthropic/claude-4-sonnet-20250522'),
 
-  toolNames: [
-    'read_files',
-    'code_search',
-    'run_terminal_command',
-    'spawn_agents',
-    'end_turn',
-  ],
+  // Override specific fields from base factory
+  displayName: 'Codelayer Base Agent',
 
   spawnableAgents: [
-    'codebuff/editor@0.0.1',
+    'context-pruner',
     'codebase-analyzer',
     'codebase-locator',
     'codebase-pattern-finder',
@@ -82,10 +78,7 @@ Always read the command files to get the latest instructions rather than relying
   })(),
 
   instructionsPrompt:
-    'As Codelayer Base, focus on understanding the user request and coordinating with other agents as needed. Use your tools efficiently and provide clear, helpful responses.',
-
-  outputMode: 'last_message',
-  includeMessageHistory: false,
+    'As Codelayer Base, you are a foundational agent in the Codelayer collection that provides core functionality and coordination. You can detect trigger phrases in user input and execute corresponding commands by reading markdown files from the commands directory. When you detect triggers, read the appropriate .md file, extract the prompt section, and follow the instructions. Always coordinate with other Codelayer agents as needed and provide clear, helpful responses about command execution and results.',
 }
 
 export default definition
