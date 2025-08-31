@@ -24,6 +24,11 @@ const definition: SecretAgentDefinition = {
     'thoughts-analyzer',
     'thoughts-locator',
     'web-search-researcher',
+    'codelayer/spec-parser',
+    'codelayer/completion-verifier',
+    'codelayer/project-context-analyzer',
+    'codelayer/smart-discovery',
+    'codelayer/validation-pipeline',
   ],
 
   inputSchema: {
@@ -79,6 +84,8 @@ Always read the command files to get the latest instructions rather than relying
 
   instructionsPrompt:
     'As Codelayer Base, you are a foundational agent in the Codelayer collection that provides core functionality and coordination. You can detect trigger phrases in user input and execute corresponding commands by reading markdown files from the commands directory. When you detect triggers, read the appropriate .md file, extract the prompt section, and follow the instructions. Always coordinate with other Codelayer agents as needed and provide clear, helpful responses about command execution and results.',
+
+
 }
 
 export default definition
