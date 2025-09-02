@@ -14,10 +14,11 @@ import {
   type ServerAction,
 } from '../../common/src/actions'
 import { API_KEY_ENV_VAR } from '../../common/src/constants'
-import { DEFAULT_MAX_AGENT_STEPS } from '../../common/src/json-config/constants'
+import { MAX_AGENT_STEPS_DEFAULT } from '../../common/src/constants/agents'
 import { toolNames } from '../../common/src/tools/constants'
 import {
   clientToolCallSchema,
+  PublishedClientToolName,
   type ClientToolCall,
   type ClientToolName,
   type CodebuffToolOutput,
@@ -25,19 +26,25 @@ import {
 
 import type { CustomToolDefinition } from './custom-tool'
 import type { AgentDefinition } from '../../common/src/templates/initial-agents-dir/types/agent-definition'
-import type { ToolName } from '../../common/src/tools/constants'
-import type { ToolResultOutput } from '../../common/src/types/messages/content-part'
+import type {
+  PublishedToolName,
+  ToolName,
+} from '../../common/src/tools/constants'
+import type {
+  ToolResultOutput,
+  ToolResultPart,
+} from '../../common/src/types/messages/content-part'
 import type { PrintModeEvent } from '../../common/src/types/print-mode'
 import type { SessionState } from '../../common/src/types/session-state'
 
 export type CodebuffClientOptions = {
   // Provide an API key or set the CODEBUFF_API_KEY environment variable.
   apiKey?: string
-  cwd: string
+  cwd?: string
   onError: (error: { message: string }) => void
   overrideTools?: Partial<
     {
-      [K in ClientToolName]: (
+      [K in ClientToolName & PublishedToolName]: (
         input: ClientToolCall<K>['input'],
       ) => Promise<CodebuffToolOutput<K>>
     } & {
@@ -79,7 +86,7 @@ export class CodebuffClient {
       )
     }
 
-    this.cwd = cwd
+    this.cwd = cwd ?? process.cwd()
     this.overrideTools = overrideTools ?? {}
     this.websocketHandler = new WebSocketHandler({
       apiKey: foundApiKey,
@@ -135,7 +142,7 @@ export class CodebuffClient {
    * @param customToolDefinitions - (Optional) Array of custom tool definitions that extend the agent's capabilities. Each tool definition includes a name, Zod schema for input validation, and a handler function. These tools can be called by the agent during execution.
    * @param maxAgentSteps - (Optional) Maximum number of steps the agent can take before stopping. Use this as a safety measure in case your agent starts going off the rails. A reasonable number is around 20.
    *
-   * @returns A Promise that resolves to a RunState JSON object which you can pass to a subsequent run() call to continue the run.
+   * @returns A Promise that resolves to a RunState JSON object which you can pass to a subsequent run() call to continue the run. Use result.output to get the agent's output.
    */
   public async run<A extends string = string, B = any, C = any>({
     agent,
@@ -148,7 +155,8 @@ export class CodebuffClient {
     knowledgeFiles,
     agentDefinitions,
     customToolDefinitions,
-    maxAgentSteps = DEFAULT_MAX_AGENT_STEPS,
+    maxAgentSteps = MAX_AGENT_STEPS_DEFAULT,
+    extraToolResults,
   }: {
     agent: string
     prompt: string
@@ -161,6 +169,7 @@ export class CodebuffClient {
     agentDefinitions?: AgentDefinition[]
     customToolDefinitions?: CustomToolDefinition<A, B, C>[]
     maxAgentSteps?: number
+    extraToolResults?: ToolResultPart[]
   }): Promise<RunState> {
     await this.websocketHandler.connect()
 
@@ -190,7 +199,6 @@ export class CodebuffClient {
         maxAgentSteps,
       })
     }
-    const toolResults = previousRun?.toolResults ?? []
     this.promptIdToHandlers[promptId] = {
       handleEvent,
       handleStreamChunk,
@@ -245,7 +253,7 @@ export class CodebuffClient {
       fingerprintId: this.fingerprintId,
       costMode: 'normal',
       sessionState,
-      toolResults,
+      toolResults: extraToolResults ?? [],
       agentId: agent,
     })
 
@@ -278,10 +286,13 @@ export class CodebuffClient {
         ].join('\n')
         promiseActions.reject(new Error(message))
       } else {
-        const { sessionState, toolResults } = parsedAction.data
+        const { sessionState, output } = parsedAction.data
         const state: RunState = {
           sessionState,
-          toolResults,
+          output: output ?? {
+            type: 'error',
+            message: 'No output from agent',
+          },
         }
         promiseActions.resolve(state)
       }
@@ -316,7 +327,7 @@ export class CodebuffClient {
     }
 
     try {
-      let override = this.overrideTools[toolName as ClientToolName]
+      let override = this.overrideTools[toolName as PublishedClientToolName]
       if (!override && toolName === 'str_replace') {
         // Note: write_file and str_replace have the same implementation, so reuse their write_file override.
         override = this.overrideTools['write_file']
@@ -334,13 +345,20 @@ export class CodebuffClient {
         } as Parameters<typeof runTerminalCommand>[0])
       } else if (toolName === 'code_search') {
         result = await codeSearch({
+          projectPath: this.cwd,
           ...input,
           cwd: input.cwd ?? this.cwd,
         } as Parameters<typeof codeSearch>[0])
       } else if (toolName === 'run_file_change_hooks') {
-        result = await runFileChangeHooks(
-          input as Parameters<typeof runFileChangeHooks>[0],
-        )
+        // No-op: SDK doesn't run file change hooks
+        result = [
+          {
+            type: 'json',
+            value: {
+              message: 'File change hooks are not supported in SDK mode',
+            },
+          },
+        ]
       } else {
         throw new Error(
           `Tool not implemented in SDK. Please provide an override or modify your agent to not use this tool: ${toolName}`,
