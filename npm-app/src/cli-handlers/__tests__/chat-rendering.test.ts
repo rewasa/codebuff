@@ -387,8 +387,8 @@ describe('Chat Rendering Functions', () => {
       expect(result[1]).toContain('└─') // Child should use └─ as it's the last
       
       // Check that child is indented properly with hierarchical tree structure
-      // The child at depth 2 gets: side padding (2 spaces) + 8 spaces for depth + tree connector
-      expect(result[1]).toMatch(/^          └─/) // Exactly 10 spaces + tree connector
+      // The child at depth 2 gets: side padding (2 spaces) + parent line (4 spaces) + tree connector
+      expect(result[1]).toMatch(/^  │       └─/) // Side padding + parent line + tree connector
     })
 
     test('should render postContent when node is expanded', () => {

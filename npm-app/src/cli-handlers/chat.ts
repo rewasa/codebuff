@@ -17,7 +17,8 @@ import {
 // Constants
 const SIDE_PADDING = 2
 const HEADER_TEXT = '💬 Codebuff Chat'
-const STATUS_TEXT = 'Enter to send • ↑/↓ to scroll • ESC or Ctrl+C to exit'
+const STATUS_TEXT =
+  'Shift + →/← to view agent traces • Tab to expand • ESC or Ctrl+C to exit'
 const PLACEHOLDER_TEXT = 'Type your message...'
 const WELCOME_MESSAGE =
   'Welcome to Codebuff Chat! Type your messages below and press Enter to send. This is a dedicated chat interface for conversations with your AI assistant.'
@@ -106,10 +107,14 @@ function getTerminalMetrics(): TerminalMetrics {
 
 export function wrapLine(line: string, terminalWidth: number): string[] {
   if (!line) return ['']
-  if (stringWidth(line) <= terminalWidth) {
+
+  // Ensure minimum width to prevent infinite loops or empty wraps
+  const safeWidth = Math.max(10, terminalWidth)
+
+  if (stringWidth(line) <= safeWidth) {
     return [line]
   }
-  const wrapped = wrapAnsi(line, terminalWidth, { hard: true })
+  const wrapped = wrapAnsi(line, safeWidth, { hard: true })
   return wrapped.split('\n')
 }
 
@@ -370,6 +375,13 @@ function finishStreamingMessage(messageId: string): void {
     chatState.currentStreamingMessageId = undefined
   }
 
+  // Collapse all subagent tree nodes when streaming finishes
+  if (message.subagentUIState) {
+    message.subagentUIState.expanded.clear()
+    message.subagentUIState.focusNodeId = null
+    message.subagentUIState.firstChildProgress.clear()
+  }
+
   updateContentLines()
   renderChat()
 }
@@ -392,23 +404,47 @@ export function renderAssistantMessage(
       message.subagentTree &&
       message.subagentTree.children &&
       message.subagentTree.children.length > 0
-    const treePrefix = hasSubagents ? '├─ ' : '└─ '
+    const hasPostContent =
+      message.subagentTree && message.subagentTree.postContent
+    const treePrefix = hasSubagents || hasPostContent ? '├─ ' : '└─ '
 
     contentLines.forEach((line) => {
       const treeLine = treePrefix + line
-      const wrappedLines = wrapLine(treeLine, metrics.contentWidth)
-      wrappedLines.forEach((wrappedLine, wrapIndex) => {
-        if (wrapIndex === 0) {
-          // First wrapped line uses the full tree line
-          lines.push(' '.repeat(metrics.sidePadding) + wrappedLine)
-        } else {
-          // Continuation lines need to align with the content after the tree prefix
-          const indentSize = stringWidth(treePrefix)
-          const indentedLine = ' '.repeat(indentSize) + wrappedLine.trimStart()
-          lines.push(' '.repeat(metrics.sidePadding) + indentedLine)
-        }
-      })
+      // No highlighting for content lines - only hint lines should be highlighted
+      const prefixLength = stringWidth(treePrefix)
+
+      appendWrappedLine(
+        lines,
+        treeLine,
+        prefixLength,
+        metrics,
+        [], // No ancestors for the root content
+        0, // The root content is always at depth 0
+      )
     })
+
+    // Show hint line if there are subagents but everything is collapsed
+    if (hasSubagents && message.subagentUIState) {
+      const isFullyCollapsed = message.subagentUIState.expanded.size === 0
+      if (isFullyCollapsed) {
+        // Count total agent responses recursively
+        const agentCount = message.subagentTree
+          ? countTotalAgents(message.subagentTree)
+          : 0
+        const hintText = `+ ${agentCount} agent response${agentCount === 1 ? '' : 's'}`
+
+        // Check if the hint line is focused
+        const hintNodeId = createNodeId(message.id, []) + '/hint'
+        const isHintFocused = message.subagentUIState.focusNodeId === hintNodeId
+
+        const hintLine = isHintFocused
+          ? `   \x1b[7m\x1b[3m${hintText}\x1b[23m\x1b[27m` // Highlighted italic text
+          : `   \x1b[3m${hintText}\x1b[23m` // Regular italic text
+
+        const prefixLength = stringWidth('   ')
+        appendWrappedLine(lines, hintLine, prefixLength, metrics, [], 1)
+      }
+    }
   }
 
   return lines
@@ -607,6 +643,13 @@ function setupChatKeyHandler(rl: any, onExit: () => void) {
       exitChatBuffer(rl)
       onExit()
       return
+    }
+
+    // Handle Tab key for expanding collapsed trees
+    if (key && key.name === 'tab' && chatState.navigationMode) {
+      if (handleTabExpansion()) {
+        return
+      }
     }
 
     // Handle subagent navigation first
@@ -809,73 +852,126 @@ async function processMessageQueue() {
   }
 }
 
-// Helper function to stream content from a node recursively (depth-first)
-async function streamContentRecursively(
-  node: {
-    content: string
-    agent: string
-    postContent?: string
-    children?: Array<{
-      content: string
-      agent: string
-      postContent?: string
-      children?: any
-    }>
-  },
-  onChunk: (chunk: string) => void,
+// Helper function to stream text to a node property word-by-word
+async function streamTextToNodeProperty(
+  node: SubagentNode,
+  property: 'content' | 'postContent',
+  text: string,
 ): Promise<void> {
-  // Stream the current node's content
-  const words = node.content.split(' ')
+  if (!text) return
 
+  const words = text.split(' ')
   for (let i = 0; i < words.length; i++) {
     const word = words[i]
     const isLastWord = i === words.length - 1
 
-    // Add space before word (except for first word)
     const chunk = (i === 0 ? '' : ' ') + word
-    onChunk(chunk)
+    if (property === 'postContent') {
+      node.postContent = (node.postContent || '') + chunk
+    } else {
+      node.content += chunk
+    }
 
-    // Variable delay between words for realistic typing
+    updateContentLines()
+    renderChat()
+
     if (!isLastWord) {
-      const delay = 40 + Math.random() * 120 // 40-160ms between words
+      const delay = 30 + Math.random() * 80
       await new Promise((resolve) => setTimeout(resolve, delay))
     }
   }
+}
 
-  // If this node has children, recursively stream their content
-  if (node.children && node.children.length > 0) {
-    for (const child of node.children) {
-      // Small pause before each child
-      await new Promise((resolve) =>
-        setTimeout(resolve, 100 + Math.random() * 200),
-      )
-      await streamContentRecursively(child, onChunk)
-    }
+// Helper function to progressively stream and build subagent tree content
+async function streamSubagentTreeContent(
+  responseNode: any,
+  message: ChatMessage,
+  currentPath: number[],
+): Promise<{ node: SubagentNode; postContent: string }[]> {
+  if (!responseNode.children || responseNode.children.length === 0) {
+    return []
   }
 
-  // After all children are finished, stream the postContent if it exists
-  if (node.postContent) {
-    // Small pause before postContent
+  const allNodesWithPostContent: { node: SubagentNode; postContent: string }[] =
+    []
+
+  // First pass: Process all children content and create nodes
+  const childNodes: { node: SubagentNode; originalChild: any }[] = []
+
+  for (
+    let childIndex = 0;
+    childIndex < responseNode.children.length;
+    childIndex++
+  ) {
+    const child = responseNode.children[childIndex]
+    const childPath = [...currentPath, childIndex]
+
+    // Add a pause before starting each subagent
     await new Promise((resolve) =>
-      setTimeout(resolve, 100 + Math.random() * 200),
+      setTimeout(resolve, 300 + Math.random() * 200),
     )
 
-    const postWords = node.postContent.split(' ')
-    for (let i = 0; i < postWords.length; i++) {
-      const word = postWords[i]
-      const isLastWord = i === postWords.length - 1
+    // Create the child node in the tree (initially with empty content)
+    const childNode: SubagentNode = {
+      id: createNodeId(message.id, childPath),
+      type: child.agent || 'unknown',
+      content: '',
+      children: [],
+    }
 
-      // Add space before word (except for first word)
-      const chunk = (i === 0 ? '' : ' ') + word
-      onChunk(chunk)
-
-      // Variable delay between words for realistic typing
-      if (!isLastWord) {
-        const delay = 40 + Math.random() * 120 // 40-160ms between words
-        await new Promise((resolve) => setTimeout(resolve, delay))
+    // Add child to parent node in tree
+    if (currentPath.length === 0) {
+      // Top-level child
+      message.subagentTree!.children.push(childNode)
+    } else {
+      // Find parent node and add child
+      const parentNode = findNodeByPath(message.subagentTree!, currentPath)
+      if (parentNode) {
+        parentNode.children.push(childNode)
       }
     }
+
+    // Expand this node in UI
+    message.subagentUIState!.expanded.add(childNode.id)
+
+    // Trigger re-render to show the new subagent node (with empty content initially)
+    updateContentLines()
+    renderChat()
+
+    // Stream this child's content word-by-word
+    await streamTextToNodeProperty(childNode, 'content', child.content)
+
+    // Store for later processing
+    childNodes.push({ node: childNode, originalChild: child })
   }
+
+  // Second pass: Process all children recursively (grandchildren)
+  for (let i = 0; i < childNodes.length; i++) {
+    const { node: childNode, originalChild: child } = childNodes[i]
+    const childPath = [...currentPath, i]
+
+    // Recursively process grandchildren and collect their postContent nodes
+    const descendantPostContentNodes = await streamSubagentTreeContent(
+      child,
+      message,
+      childPath,
+    )
+    allNodesWithPostContent.push(...descendantPostContentNodes)
+  }
+
+  // Third pass: After ALL descendants are processed, collect postContent from this level
+  for (const { node: childNode, originalChild: child } of childNodes) {
+    if (child.postContent) {
+      allNodesWithPostContent.push({
+        node: childNode,
+        postContent: child.postContent,
+      })
+    }
+  }
+
+  // Return collected postContent nodes without streaming them
+  // Only the top-level call will stream them
+  return allNodesWithPostContent
 }
 
 // Simulates streaming AI response with chunked updates
@@ -883,31 +979,32 @@ async function simulateStreamingResponse(
   message: string,
   onChunk: (chunk: string) => void,
 ): Promise<void> {
-  // Generate a response based on the message - now structured as tree with children and postContent
+  // Generate a response based on the message - show realistic subagent interactions with internal monologues
   const responses = [
     {
-      content: `I'll analyze your codebase structure and implement the requested changes.`,
+      content: `I'll help you fix that issue. Let me find the relevant files first.`,
       agent: 'assistant',
-      postContent: `All changes have been successfully applied and tested.`,
+      postContent: `Issue resolved! The implementation follows best practices.`,
       children: [
         {
-          content: `src/\n├── components/           # React UI components\n│   ├── Button.tsx        # Reusable button component\n│   ├── Modal.tsx         # Modal dialog component\n│   └── Layout/           # Layout components\n│       ├── Header.tsx    # Main navigation header\n│       └── Sidebar.tsx   # Navigation sidebar\n│\n├── hooks/               # Custom React hooks\n│   ├── useAuth.ts       # Authentication state management\n│   ├── useApi.ts        # API call abstraction\n│   └── useLocalStorage.ts # Local storage utilities\n│\n├── utils/               # Utility functions\n│   ├── validation.ts    # Form validation helpers\n│   ├── formatting.ts    # Data formatting utilities\n│   └── constants.ts     # Application constants\n│\n└── types/               # TypeScript type definitions\n    ├── api.ts          # API response types\n    └── user.ts         # User-related types`,
-          agent: 'file-explorer',
-          children: [],
-        },
-      ],
-    },
-    {
-      content: `I'll set up the backend architecture with proper separation of concerns.`,
-      agent: 'assistant',
-      postContent: `Backend services are now properly organized and documented.`,
-      children: [
-        {
-          content: `backend/\n├── api/                 # REST API endpoints\n│   ├── routes/          # Route definitions\n│   │   ├── auth.ts      # Authentication endpoints\n│   │   ├── users.ts     # User management endpoints\n│   │   └── posts.ts     # Content management endpoints\n│   │\n│   ├── middleware/      # Express middleware\n│   │   ├── auth.ts      # JWT authentication middleware\n│   │   ├── validation.ts # Request validation middleware\n│   │   └── errorHandler.ts # Global error handling\n│   │\n│   └── controllers/     # Business logic controllers\n│       ├── AuthController.ts # Authentication logic\n│       └── UserController.ts # User management logic\n│\n├── database/           # Database configuration\n│   ├── migrations/     # Database schema migrations\n│   ├── models/         # ORM models\n│   └── seeders/        # Test data seeders\n│\n└── services/           # External service integrations\n    ├── EmailService.ts # Email sending service\n    └── StorageService.ts # File storage service`,
-          agent: 'file-explorer',
+          content: `Let me search through the codebase systematically. I'll start by looking for files containing keywords related to "${message.toLowerCase()}"...`,
+          agent: 'file-picker',
+          postContent: `Found 3 relevant files: auth.ts, userService.js, and login.component.tsx`,
           children: [
             {
-              content: `Database schema optimized for performance\nAPI endpoints follow RESTful conventions\nMiddleware properly handles authentication`,
+              content: `Hmm, I need to be strategic about which files to examine. Let me check the most recently modified ones first, then look at the core logic files...`,
+              agent: 'file-picker',
+              children: [],
+            },
+          ],
+        },
+        {
+          content: `Now I'll carefully review these changes. Let me check for common pitfalls: null safety, type consistency, error handling...`,
+          agent: 'reviewer',
+          postContent: `Code review passed - all changes look good! No security issues detected.`,
+          children: [
+            {
+              content: `The error handling looks solid, but I should double-check the edge cases. What happens if the API returns unexpected data?`,
               agent: 'reviewer',
               children: [],
             },
@@ -916,28 +1013,35 @@ async function simulateStreamingResponse(
       ],
     },
     {
-      content: `I'll implement comprehensive testing structure for the project.`,
+      content: `I'll implement the feature you requested.`,
       agent: 'assistant',
-      postContent: `Testing infrastructure is now complete with 95% code coverage.`,
+      postContent: `Feature implementation complete with comprehensive tests.`,
       children: [
         {
-          content: `tests/\n├── unit/               # Unit tests\n│   ├── components/      # Component tests\n│   │   ├── Button.test.tsx # Button component tests\n│   │   └── Modal.test.tsx  # Modal component tests\n│   │\n│   ├── utils/           # Utility function tests\n│   │   ├── validation.test.ts # Validation tests\n│   │   └── formatting.test.ts # Formatting tests\n│   │\n│   └── services/        # Service layer tests\n│       ├── AuthService.test.ts # Auth service tests\n│       └── ApiService.test.ts  # API service tests\n│\n├── integration/        # Integration tests\n│   ├── api/            # API endpoint tests\n│   │   ├── auth.test.ts # Authentication flow tests\n│   │   └── users.test.ts # User management tests\n│   │\n│   └── database/       # Database integration tests\n│       └── models.test.ts # Model relationship tests\n│\n├── e2e/               # End-to-end tests\n│   ├── user-journey.test.ts # Complete user flows\n│   └── admin-panel.test.ts  # Admin functionality tests\n│\n└── fixtures/           # Test data and mocks\n    ├── mockData.ts     # Mock API responses\n    └── testUsers.ts    # Test user accounts`,
-          agent: 'file-explorer',
-          children: [],
-        },
-      ],
-    },
-    {
-      content: `I'll configure the development and deployment pipeline.`,
-      agent: 'assistant',
-      postContent: `CI/CD pipeline configured with automated testing and deployment.`,
-      children: [
-        {
-          content: `config/\n├── docker/             # Container configuration\n│   ├── Dockerfile      # Production container setup\n│   ├── docker-compose.yml # Development environment\n│   └── nginx.conf      # Reverse proxy configuration\n│\n├── ci/                 # Continuous integration\n│   ├── .github/        # GitHub Actions workflows\n│   │   ├── test.yml    # Automated testing pipeline\n│   │   ├── build.yml   # Build and package pipeline\n│   │   └── deploy.yml  # Deployment pipeline\n│   │\n│   └── scripts/        # Build and deployment scripts\n│       ├── build.sh    # Production build script\n│       ├── test.sh     # Test execution script\n│       └── deploy.sh   # Deployment automation\n│\n├── environments/       # Environment configurations\n│   ├── development.env # Development settings\n│   ├── staging.env     # Staging environment\n│   └── production.env  # Production settings\n│\n└── monitoring/         # Application monitoring\n    ├── logging.config  # Centralized logging setup\n    ├── metrics.config  # Performance metrics\n    └── alerts.config   # Error alerting rules`,
-          agent: 'file-explorer',
+          content: `@file-picker: I need to understand the current architecture before making changes`,
+          agent: 'system',
           children: [
             {
-              content: `✅ Docker containers optimized for production\n✅ CI/CD pipeline includes security scanning\n✅ Monitoring covers all critical paths`,
+              content: `Let me map out the component hierarchy first. Looking at imports and exports to understand dependencies...`,
+              agent: 'file-picker',
+              postContent: `Located src/components/Button.tsx, src/types/ui.ts, and src/hooks/useAuth.ts`,
+              children: [
+                {
+                  content: `I notice this component is used in 12 different places. I need to ensure my changes don't break existing functionality...`,
+                  agent: 'file-picker',
+                  children: [],
+                },
+              ],
+            },
+          ],
+        },
+        {
+          content: `Running comprehensive test suite to ensure nothing breaks...`,
+          agent: 'system',
+          postContent: `✅ All 28 tests passing, coverage increased to 94%`,
+          children: [
+            {
+              content: `Tests look good, but let me also check the integration tests to make sure the new feature plays well with the existing system...`,
               agent: 'system',
               children: [],
             },
@@ -946,29 +1050,86 @@ async function simulateStreamingResponse(
       ],
     },
     {
-      content: `I'll organize the documentation and knowledge management system.`,
+      content: `Let me analyze the error and provide a solution.`,
       agent: 'assistant',
-      postContent: `Documentation is now comprehensive and easily maintainable.`,
+      postContent: `Error analysis complete. Root cause identified and fix applied successfully.`,
       children: [
         {
-          content: `docs/\n├── api/                # API documentation\n│   ├── openapi.yml     # OpenAPI specification\n│   ├── authentication.md # Auth guide\n│   └── endpoints/      # Detailed endpoint docs\n│       ├── users.md    # User endpoints\n│       └── posts.md    # Content endpoints\n│\n├── guides/             # Developer guides\n│   ├── getting-started.md # Quick start guide\n│   ├── development.md  # Development workflow\n│   ├── testing.md      # Testing guidelines\n│   └── deployment.md   # Deployment procedures\n│\n├── architecture/       # System architecture\n│   ├── overview.md     # High-level architecture\n│   ├── database.md     # Database design\n│   ├── security.md     # Security considerations\n│   └── performance.md  # Performance guidelines\n│\n└── examples/           # Code examples\n    ├── api-usage.md    # API usage examples\n    ├── integration.md  # Integration examples\n    └── troubleshooting.md # Common issues`,
-          agent: 'file-explorer',
-          children: [],
+          content: `I'm seeing an error pattern here. Let me search for similar issues in the codebase to understand if this is systemic...`,
+          agent: 'file-picker',
+          postContent: `Found 2 files with similar patterns - this might be a broader issue`,
+          children: [
+            {
+              content: `Interesting, these files all share the same async pattern. I bet the issue is in how we're handling Promise rejections...`,
+              agent: 'file-picker',
+              children: [],
+            },
+          ],
+        },
+        {
+          content: `Let me think through this systematically. The stack trace shows the error originates in userService.getProfile()...`,
+          agent: 'thinker',
+          postContent: `Root cause identified: Missing null check when user session is expired`,
+          children: [
+            {
+              content: `The issue is subtle - we're assuming the session is valid, but if it expires mid-request, the user object becomes null. Classic race condition.`,
+              agent: 'thinker',
+              children: [],
+            },
+          ],
         },
       ],
     },
     {
-      content: `Let me examine and refactor the existing codebase for better maintainability.`,
+      content: `I'll refactor this code to improve maintainability.`,
       agent: 'assistant',
-      postContent: `Codebase has been successfully refactored with improved structure and performance.`,
+      postContent: `Refactoring complete! Code is now cleaner, more testable, and follows SOLID principles.`,
       children: [
         {
-          content: `refactoring/\n├── analysis/           # Code analysis results\n│   ├── complexity.json # Cyclomatic complexity metrics\n│   ├── dependencies.json # Dependency analysis\n│   └── coverage.json   # Test coverage report\n│\n├── improvements/       # Identified improvements\n│   ├── performance/    # Performance optimizations\n│   │   ├── lazy-loading.ts # Component lazy loading\n│   │   ├── memoization.ts  # React memoization\n│   │   └── bundling.ts     # Code splitting strategy\n│   │\n│   ├── maintainability/ # Code maintainability\n│   │   ├── extract-hooks.ts # Custom hook extraction\n│   │   ├── component-split.ts # Component decomposition\n│   │   └── type-safety.ts    # TypeScript improvements\n│   │\n│   └── scalability/    # Scalability enhancements\n│       ├── state-management.ts # Redux/Zustand setup\n│       ├── caching-strategy.ts # Data caching\n│       └── error-boundaries.ts # Error handling\n│\n└── migration/          # Migration strategies\n    ├── legacy-cleanup.md # Legacy code removal\n    ├── api-versioning.md # API version management\n    └── database-migration.md # Database updates`,
-          agent: 'thinker',
+          content: `@reviewer: Let me analyze the current code structure and identify refactoring opportunities`,
+          agent: 'system',
           children: [
             {
-              content: `Code complexity reduced by 40%\nBundle size optimized by 25%\nTest coverage increased to 95%`,
+              content: `This component is doing too much - 247 lines with mixed concerns. I can see authentication logic, UI rendering, and data fetching all in one place...`,
               agent: 'reviewer',
+              postContent: `Identified 4 improvement opportunities: extract custom hooks, separate business logic, add error boundaries, improve prop types`,
+              children: [
+                {
+                  content: `The useEffect has 3 different dependencies doing unrelated things. This is a classic sign we need to split responsibilities...`,
+                  agent: 'reviewer',
+                  children: [],
+                },
+              ],
+            },
+          ],
+        },
+      ],
+    },
+    {
+      content: `I'll help you set up the testing infrastructure.`,
+      agent: 'assistant',
+      postContent: `Testing infrastructure complete! Achieved 95% coverage with comprehensive test suites.`,
+      children: [
+        {
+          content: `Setting up Jest and React Testing Library. I need to configure the test environment to match the production setup...`,
+          agent: 'file-picker',
+          postContent: `Created jest.config.js, setupTests.ts, and test utilities`,
+          children: [
+            {
+              content: `I should also set up MSW for API mocking - that way our tests won't depend on external services...`,
+              agent: 'file-picker',
+              children: [],
+            },
+          ],
+        },
+        {
+          content: `Running initial test suite to verify the setup works correctly...`,
+          agent: 'system',
+          postContent: `✅ 12 tests passed, 0 failed. Test infrastructure ready for development.`,
+          children: [
+            {
+              content: `Good! The coverage report shows we're testing the happy path well, but I should add some edge case tests too...`,
+              agent: 'system',
               children: [],
             },
           ],
@@ -983,11 +1144,13 @@ async function simulateStreamingResponse(
   // Initial delay before starting to stream
   await new Promise((resolve) => setTimeout(resolve, 800 + Math.random() * 400))
 
-  // Stream only the main content (not the children or postContent)
+  // Only stream the main assistant content, not the subagent tree content
+  // The subagent tree will be displayed separately by renderSubagentTree
   const words = selectedResponse.content.split(' ')
   for (let i = 0; i < words.length; i++) {
     const word = words[i]
     const isLastWord = i === words.length - 1
+
     const chunk = (i === 0 ? '' : ' ') + word
     onChunk(chunk)
 
@@ -997,45 +1160,58 @@ async function simulateStreamingResponse(
     }
   }
 
-  // After streaming main content, set up the subagent tree
-  if (chatState.currentStreamingMessageId) {
+  // After main content is streamed, set up and progressively stream the subagent tree
+  if (chatState.currentStreamingMessageId && selectedResponse.children) {
     const streamingMessage = chatState.messages.find(
       (m) => m.id === chatState.currentStreamingMessageId,
     )
-    if (streamingMessage && selectedResponse.children) {
-      // Build subagent tree from the selected response
-      const tree = buildSubagentTree(selectedResponse)
-
-      // Update the tree with the correct message ID
-      function updateNodeIds(
-        node: SubagentNode,
-        path: number[] = [],
-      ): SubagentNode {
-        const nodeId = createNodeId(streamingMessage!.id, path)
-        return {
-          ...node,
-          id: nodeId,
-          children: node.children.map((child, index) =>
-            updateNodeIds(child, [...path, index]),
-          ),
-        }
+    if (streamingMessage) {
+      // Initialize empty tree structure (postContent will be streamed later)
+      streamingMessage.subagentTree = {
+        id: createNodeId(streamingMessage.id, []),
+        type: 'assistant',
+        content: selectedResponse.content,
+        children: [],
+        // postContent intentionally omitted - will be streamed after all children
       }
-
-      streamingMessage.subagentTree = updateNodeIds(tree)
       streamingMessage.subagentUIState = {
-        expanded: new Set([createNodeId(streamingMessage.id, [0])]), // Auto-expand first child
+        expanded: new Set(),
         focusNodeId: null,
         firstChildProgress: new Map(),
       }
 
-      // Add parent's postContent to tree if it exists
+      // Stream subagent tree content progressively
+      const allPostContentNodes = await streamSubagentTreeContent(
+        selectedResponse,
+        streamingMessage,
+        [],
+      )
+
+      // Add parent postContent to the collection (should be streamed last)
       if (selectedResponse.postContent) {
-        streamingMessage.subagentTree.postContent = selectedResponse.postContent
+        allPostContentNodes.push({
+          node: streamingMessage.subagentTree,
+          postContent: selectedResponse.postContent,
+        })
+      }
+
+      // After ALL subagents are done, stream postContent in the correct order
+      for (const item of allPostContentNodes) {
+        // Small pause before postContent
+        await new Promise((resolve) =>
+          setTimeout(resolve, 200 + Math.random() * 100),
+        )
+
+        // Initialize and stream postContent
+        item.node.postContent = ''
+        await streamTextToNodeProperty(
+          item.node,
+          'postContent',
+          item.postContent,
+        )
       }
     }
   }
-
-  // postContent will be rendered as part of the subagent tree, not streamed separately
 }
 
 // Cleanup function to ensure we exit chat buffer on process termination
@@ -1104,6 +1280,72 @@ function buildSubagentTree(mockResponse: any): SubagentNode {
   return convertNode(mockResponse)
 }
 
+// Helper function to append wrapped lines with proper indentation
+function appendWrappedLine(
+  lines: string[],
+  textToWrap: string,
+  indentationLength: number,
+  metrics: TerminalMetrics,
+  ancestorLines: boolean[] = [],
+  depth: number = 0,
+): void {
+  // Gracefully handle empty text
+  if (!textToWrap) {
+    return
+  }
+
+  // Wrap the text to get the first line, which uses the full content width.
+  const allLines = wrapLine(textToWrap, metrics.contentWidth)
+  const firstLine = allLines[0]
+  lines.push(' '.repeat(metrics.sidePadding) + firstLine)
+
+  // If there are subsequent lines, they need to be re-wrapped with indentation.
+  if (allLines.length > 1) {
+    const remainingText = allLines.slice(1).join(' ')
+    const continuationWidth = Math.max(
+      10,
+      metrics.contentWidth - indentationLength,
+    )
+
+    // Build the continuation prefix that maintains tree structure
+    let continuationPrefix = ''
+    for (let i = 0; i < depth; i++) {
+      if (i < ancestorLines.length && ancestorLines[i]) {
+        continuationPrefix += '│   ' // Vertical line for continuing ancestors
+      } else {
+        continuationPrefix += '    ' // Empty space for finished ancestors
+      }
+    }
+    // Add spacing to align with the content after the tree prefix
+    const spacingNeeded = Math.max(
+      0,
+      indentationLength - continuationPrefix.length,
+    )
+    continuationPrefix += ' '.repeat(spacingNeeded)
+
+    const totalIndentation =
+      ' '.repeat(metrics.sidePadding) + continuationPrefix
+
+    // Re-wrap the rest of the text with the narrower width.
+    const continuationLines = wrapLine(remainingText, continuationWidth)
+    for (const line of continuationLines) {
+      const finalLine = totalIndentation + line
+      // Ensure we don't exceed terminal width
+      if (finalLine.length <= metrics.width) {
+        lines.push(finalLine)
+      } else {
+        // If even with indentation we exceed width, truncate gracefully
+        const truncatedContent =
+          line.substring(
+            0,
+            Math.max(1, metrics.width - totalIndentation.length - 3),
+          ) + '...'
+        lines.push(totalIndentation + truncatedContent)
+      }
+    }
+  }
+}
+
 export function renderSubagentTree(
   tree: SubagentNode,
   uiState: SubagentUIState,
@@ -1146,26 +1388,32 @@ export function renderSubagentTree(
     // Build header line with proper tree structure
     const header = `${treePrefix}${typeLabel}${firstLine}`
 
-    // Apply focus highlighting
-    const displayLine = isFocused ? `\x1b[7m${header}\x1b[27m` : header
+    // No highlighting for content lines - only hint lines should be highlighted
+    const highlightedHeader = header
 
-    // Wrap the line properly with side padding
-    const wrappedLines = wrapLine(displayLine, metrics.contentWidth)
-    wrappedLines.forEach((wrappedLine) => {
-      lines.push(' '.repeat(metrics.sidePadding) + wrappedLine)
-    })
+    // Wrap the line properly with side padding and maintain indentation for wrapped lines
+    const prefixLength = stringWidth(treePrefix + typeLabel)
+    appendWrappedLine(
+      lines,
+      highlightedHeader,
+      prefixLength,
+      metrics,
+      ancestorLines,
+      depth,
+    )
 
     // Render children if expanded
     if (hasChildren && isExpanded) {
       node.children.forEach((child, index) => {
         const isChildLastChild = index === node.children.length - 1
-        // Build new ancestor lines array: current node contributes a line if not the last child
+        // Build new ancestor lines array: ensure it's exactly depth+1 long
         const newAncestorLines = [...ancestorLines]
-        if (depth < newAncestorLines.length) {
-          newAncestorLines[depth] = !isLastChild
-        } else {
-          newAncestorLines.push(!isLastChild)
+        // Pad array to correct length if needed
+        while (newAncestorLines.length <= depth) {
+          newAncestorLines.push(false)
         }
+        // Set current depth: true if this node will have more siblings
+        newAncestorLines[depth] = !isLastChild
 
         renderNode(
           child,
@@ -1175,10 +1423,43 @@ export function renderSubagentTree(
           newAncestorLines,
         )
       })
+    } else if (hasChildren && !isExpanded) {
+      // Show hint line if there are children but they're collapsed
+      const childAgentCount = countTotalAgents(node)
+      const hintText = `+ ${childAgentCount} agent response${childAgentCount === 1 ? '' : 's'}`
+
+      // Check if the hint line for this node is focused
+      const hintNodeId = nodeId + '/hint'
+      const isHintFocused = uiState.focusNodeId === hintNodeId
+
+      // Build prefix for hint - appears as child of this node
+      let hintPrefix = ''
+      for (let i = 0; i < depth; i++) {
+        if (i < ancestorLines.length && ancestorLines[i]) {
+          hintPrefix += '│   ' // Vertical line for continuing ancestors
+        } else {
+          hintPrefix += '    ' // Empty space for finished ancestors
+        }
+      }
+      hintPrefix += '    ' // Extra indentation for hint
+
+      const hintLine = isHintFocused
+        ? `${hintPrefix}\x1b[7m\x1b[3m${hintText}\x1b[23m\x1b[27m` // Highlighted italic text
+        : `${hintPrefix}\x1b[3m${hintText}\x1b[23m` // Regular italic text
+
+      const prefixLength = stringWidth(hintPrefix)
+      appendWrappedLine(
+        lines,
+        hintLine,
+        prefixLength,
+        metrics,
+        ancestorLines,
+        depth + 1,
+      )
     }
 
-    // Render postContent after children (if it has any and node is expanded)
-    if (node.postContent && isExpanded) {
+    // Render postContent after children (if it has any)
+    if (node.postContent) {
       const postLines = node.postContent.split('\n')
       postLines.forEach((line) => {
         if (line.trim()) {
@@ -1195,37 +1476,45 @@ export function renderSubagentTree(
             postPrefix += '└─ ' // PostContent is always the last item
           }
 
+          // No highlighting for postContent lines - only hint lines should be highlighted
           const postLine = `${postPrefix}${line}`
-          const wrappedPostLines = wrapLine(postLine, metrics.contentWidth)
-          wrappedPostLines.forEach((wrappedLine) => {
-            lines.push(' '.repeat(metrics.sidePadding) + wrappedLine)
-          })
+          const prefixLength = stringWidth(postPrefix)
+          appendWrappedLine(
+            lines,
+            postLine,
+            prefixLength,
+            metrics,
+            ancestorLines,
+            depth,
+          )
         }
       })
     }
   }
 
-  // Only render if there are children to show
-  if (tree.children && tree.children.length > 0) {
-    // Render each top-level child starting from depth 1 to nest them inside parent content
-    tree.children.forEach((child, index) => {
-      const isLastChild = index === tree.children.length - 1
-      renderNode(child, 1, [index], isLastChild, [true]) // Start at depth 1 with parent line
-    })
-
-    // Render parent's postContent after all subagent children (if it exists)
-    if (tree.postContent) {
-      const postLines = tree.postContent.split('\n')
-      postLines.forEach((line) => {
-        if (line.trim()) {
-          const postLine = `└─ ${line}` // Simple connector for parent postContent
-          const wrappedPostLines = wrapLine(postLine, metrics.contentWidth)
-          wrappedPostLines.forEach((wrappedLine) => {
-            lines.push(' '.repeat(metrics.sidePadding) + wrappedLine)
-          })
-        }
+  // Render children (or hint) only if the tree is not fully collapsed
+  if (uiState.expanded.size > 0) {
+    if (tree.children && tree.children.length > 0) {
+      // Render each top-level child starting from depth 1
+      tree.children.forEach((child, index) => {
+        // A child is only the "last child" if it's the last AND there's no postContent coming after
+        const isLastChild =
+          index === tree.children.length - 1 && !tree.postContent
+        renderNode(child, 1, [index], isLastChild, [true])
       })
     }
+  }
+
+  // Always render the parent's postContent if it exists, after all children
+  if (tree.postContent) {
+    const postLines = tree.postContent.split('\n')
+    postLines.forEach((line) => {
+      if (line.trim()) {
+        const postLine = `└─ ${line}` // Simple connector for parent postContent
+        const prefixLength = stringWidth('└─ ')
+        appendWrappedLine(lines, postLine, prefixLength, metrics, [], 0)
+      }
+    })
   }
 
   return lines
@@ -1248,6 +1537,51 @@ function findLatestAssistantMessageWithChildren(): string | null {
   return null
 }
 
+function handleTabExpansion(): boolean {
+  // Find the currently focused message
+  const focusedMessage = chatState.messages.find(
+    (m) => m.subagentUIState?.focusNodeId,
+  )
+
+  if (
+    !focusedMessage ||
+    !focusedMessage.subagentTree ||
+    !focusedMessage.subagentUIState
+  ) {
+    return false
+  }
+
+  const uiState = focusedMessage.subagentUIState
+
+  // Check if we're focused on any hint line (not just root)
+  if (uiState.focusNodeId && uiState.focusNodeId.endsWith('/hint')) {
+    // Extract the actual node ID by removing '/hint' suffix
+    const actualNodeId = uiState.focusNodeId.slice(0, -5)
+
+    // Expand this node
+    uiState.expanded.add(actualNodeId)
+
+    // Focus on the first child node after expansion
+    const { path } = parseNodePath(actualNodeId)
+    const node = findNodeByPath(focusedMessage.subagentTree, path)
+
+    if (node && node.children && node.children.length > 0) {
+      const firstChildPath = [...path, 0]
+      const firstChildNodeId = createNodeId(focusedMessage.id, firstChildPath)
+      uiState.focusNodeId = firstChildNodeId
+    } else {
+      // Fallback to the actual node if no children
+      uiState.focusNodeId = actualNodeId
+    }
+
+    updateContentLines()
+    renderChat()
+    return true
+  }
+
+  return false
+}
+
 function handleSubagentNavigation(key: any): boolean {
   if (!chatState.navigationMode) return false
 
@@ -1268,65 +1602,96 @@ function handleSubagentNavigation(key: any): boolean {
   const uiState = focusedMessage.subagentUIState
 
   if (key.shift && key.name === 'right') {
-    // Shift+Right: Open or navigate deeper
+    // Shift+Right: Simple expansion - just expand current node and focus first child
     if (!uiState.focusNodeId) return true
 
+    // Handle hint node focus - if focused on hint, expand that node
+    if (uiState.focusNodeId.endsWith('/hint')) {
+      const actualNodeId = uiState.focusNodeId.slice(0, -5)
+      uiState.expanded.add(actualNodeId)
+
+      // Focus on the first child after expansion
+      const { path } = parseNodePath(actualNodeId)
+      const node = findNodeByPath(tree, path)
+
+      if (node && node.children && node.children.length > 0) {
+        const firstChildPath = [...path, 0]
+        const firstChildNodeId = createNodeId(focusedMessage.id, firstChildPath)
+        uiState.focusNodeId = firstChildNodeId
+      } else {
+        uiState.focusNodeId = actualNodeId
+      }
+
+      updateContentLines()
+      renderChat()
+      return true
+    }
+
+    // For regular nodes, only expand if collapsed and has children
     const { path } = parseNodePath(uiState.focusNodeId)
     const focusedNode = findNodeByPath(tree, path)
 
     if (!focusedNode) return true
 
+    const hasChildren = focusedNode.children && focusedNode.children.length > 0
     const isExpanded = uiState.expanded.has(uiState.focusNodeId)
 
-    if (!isExpanded) {
-      // Open the focused node and close all its descendants
+    if (!isExpanded && hasChildren) {
+      // Expand the node and focus on its hint line (like the reverse of Shift+Left)
       uiState.expanded.add(uiState.focusNodeId)
-      // Remove any descendant nodes from expanded set
-      const descendantPrefix = uiState.focusNodeId + '/'
-      uiState.expanded.forEach((nodeId) => {
-        if (nodeId.startsWith(descendantPrefix)) {
-          uiState.expanded.delete(nodeId)
-        }
-      })
-      uiState.firstChildProgress.set(uiState.focusNodeId, 0)
-    } else {
-      // Navigate to first child or next sibling in DFS order
-      const progress = uiState.firstChildProgress.get(uiState.focusNodeId) || 0
-
-      if (focusedNode.children && progress < focusedNode.children.length) {
-        const childPath = [...path, progress]
-        const childNodeId = createNodeId(focusedMessage.id, childPath)
-        uiState.focusNodeId = childNodeId
-        uiState.firstChildProgress.set(uiState.focusNodeId, 0)
-        uiState.firstChildProgress.set(focusedMessage.id, progress + 1)
-      }
+      // Focus on first child
+      const firstChildPath = [...path, 0]
+      const firstChildNodeId = createNodeId(focusedMessage.id, firstChildPath)
+      uiState.focusNodeId = firstChildNodeId
     }
+    // If already expanded or no children, do nothing (no jumping around)
 
     updateContentLines()
     renderChat()
     return true
   }
-
   if (key.shift && key.name === 'left') {
-    // Shift+Left: Close or navigate up
+    // Shift+Left: Toggle-style collapse - just collapse the currently focused node
     if (!uiState.focusNodeId) return true
 
-    const isExpanded = uiState.expanded.has(uiState.focusNodeId)
+    // Handle hint node focus - can't collapse a hint, so move to parent
+    if (uiState.focusNodeId.endsWith('/hint')) {
+      const actualNodeId = uiState.focusNodeId.slice(0, -5)
+      const { path } = parseNodePath(actualNodeId)
 
-    if (isExpanded) {
-      // Close the focused node
-      uiState.expanded.delete(uiState.focusNodeId)
-      // Remove all descendant nodes from expanded set
-      const descendantPrefix = uiState.focusNodeId + '/'
-      uiState.expanded.forEach((nodeId) => {
-        if (nodeId.startsWith(descendantPrefix)) {
-          uiState.expanded.delete(nodeId)
-        }
-      })
-    } else {
-      // Move focus to parent
-      const { path } = parseNodePath(uiState.focusNodeId)
       if (path.length > 0) {
+        // Move to parent node
+        const parentPath = path.slice(0, -1)
+        const parentNodeId = createNodeId(focusedMessage.id, parentPath)
+        uiState.focusNodeId = parentNodeId
+      } else {
+        // Already at root, stay on root hint
+        return true
+      }
+    } else {
+      // For regular nodes, collapse this node and show its hint if it has children
+      const { path } = parseNodePath(uiState.focusNodeId)
+      const currentNode = findNodeByPath(tree, path)
+
+      if (
+        currentNode &&
+        currentNode.children &&
+        currentNode.children.length > 0
+      ) {
+        // Collapse this node and all its descendants
+        uiState.expanded.delete(uiState.focusNodeId)
+        // Remove all descendant nodes from expanded set
+        const descendantPrefix = uiState.focusNodeId + '/'
+        uiState.expanded.forEach((nodeId) => {
+          if (nodeId.startsWith(descendantPrefix)) {
+            uiState.expanded.delete(nodeId)
+          }
+        })
+
+        // Focus on the hint line for this now-collapsed node
+        uiState.focusNodeId = uiState.focusNodeId + '/hint'
+      } else if (path.length > 0) {
+        // Node has no children, move focus to parent
         const parentPath = path.slice(0, -1)
         const parentNodeId = createNodeId(focusedMessage.id, parentPath)
         uiState.focusNodeId = parentNodeId
@@ -1339,6 +1704,17 @@ function handleSubagentNavigation(key: any): boolean {
   }
 
   return false
+}
+
+// Helper function to count total agents in a tree
+function countTotalAgents(tree: SubagentNode): number {
+  if (!tree.children || tree.children.length === 0) return 0
+
+  let count = tree.children.length
+  for (const child of tree.children) {
+    count += countTotalAgents(child)
+  }
+  return count
 }
 
 function initializeNavigationMode(): void {
@@ -1359,8 +1735,9 @@ function initializeNavigationMode(): void {
     }
   }
 
-  // Set focus to the root node
-  message.subagentUIState.focusNodeId = createNodeId(message.id, [])
+  // Always focus on the hint line when entering navigation mode
+  // This ensures the hint gets highlighted immediately
+  message.subagentUIState.focusNodeId = createNodeId(message.id, []) + '/hint'
 
   chatState.navigationMode = true
   updateContentLines()
