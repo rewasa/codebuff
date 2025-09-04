@@ -9,6 +9,9 @@ import {
   HIDE_CURSOR,
   SHOW_CURSOR,
   MOVE_CURSOR,
+  SET_CURSOR_STEADY_BAR,
+  SET_CURSOR_DEFAULT,
+  DISABLE_CURSOR_BLINK,
 } from '../utils/terminal'
 import { logger } from '../utils/logger'
 
@@ -21,9 +24,6 @@ const WELCOME_MESSAGE =
   'Welcome to Codebuff Chat! Type your messages below and press Enter to send. This is a dedicated chat interface for conversations with your AI assistant.'
 const QUEUE_ARROW = '↑'
 const SEPARATOR_CHAR = '─'
-const CURSOR_CHAR = '▋'
-const CURSOR_BLINK_INTERVAL = 1000 // ms
-const INACTIVITY_THRESHOLD = 2000 // ms
 
 // Interfaces
 interface ChatMessage {
@@ -49,15 +49,12 @@ interface ChatState {
   isWaitingForResponse: boolean
   messageQueue: string[]
   userHasScrolled: boolean
-  lastInputTime: number
-  cursorVisible: boolean
   currentStreamingMessageId?: string
 }
 
 // State
 let isInChatBuffer = false
 let originalKeyHandlers: ((str: string, key: any) => void)[] = []
-let blinkInterval: NodeJS.Timeout | null = null
 let chatState: ChatState = {
   messages: [],
   currentInput: '',
@@ -66,8 +63,6 @@ let chatState: ChatState = {
   isWaitingForResponse: false,
   messageQueue: [],
   userHasScrolled: false,
-  lastInputTime: Date.now(),
-  cursorVisible: true,
   currentStreamingMessageId: undefined,
 }
 
@@ -115,9 +110,10 @@ function calculateInputAreaHeight(metrics: TerminalMetrics): number {
   if (chatState.currentInput.length === 0) {
     inputAreaHeight += 1 // Just the placeholder
   } else {
-    const cursor = chatState.cursorVisible ? bold(gray(CURSOR_CHAR)) : ' '
-    const inputWithCursor = chatState.currentInput + cursor
-    const wrappedInputLines = wrapLine(inputWithCursor, metrics.contentWidth)
+    const wrappedInputLines = wrapLine(
+      chatState.currentInput,
+      metrics.contentWidth,
+    )
     inputAreaHeight += wrappedInputLines.length
   }
 
@@ -181,45 +177,59 @@ function resetChatState(): void {
     isWaitingForResponse: false,
     messageQueue: [],
     userHasScrolled: false,
-    lastInputTime: Date.now(),
-    cursorVisible: true,
     currentStreamingMessageId: undefined,
   }
 }
 
-function startCursorBlink(): void {
-  if (blinkInterval) {
-    clearInterval(blinkInterval)
-  }
-
-  blinkInterval = setInterval(() => {
-    const now = Date.now()
-    const timeSinceLastInput = now - chatState.lastInputTime
-
-    // Only blink if user hasn't typed recently
-    if (timeSinceLastInput > INACTIVITY_THRESHOLD) {
-      chatState.cursorVisible = !chatState.cursorVisible
-      renderChat()
-    } else {
-      // Always show cursor when user is actively typing
-      if (!chatState.cursorVisible) {
-        chatState.cursorVisible = true
-        renderChat()
-      }
-    }
-  }, CURSOR_BLINK_INTERVAL)
+function setupRealCursor(): void {
+  // Set the real cursor to steady bar style and disable blinking
+  // This is the actual cursor that shows where typing will occur
+  process.stdout.write(SET_CURSOR_STEADY_BAR)
+  process.stdout.write(DISABLE_CURSOR_BLINK)
 }
 
-function stopCursorBlink(): void {
-  if (blinkInterval) {
-    clearInterval(blinkInterval)
-    blinkInterval = null
-  }
+function restoreDefaultRealCursor(): void {
+  // Restore the real cursor to default style
+  process.stdout.write(SET_CURSOR_DEFAULT)
 }
 
-function updateLastInputTime(): void {
-  chatState.lastInputTime = Date.now()
-  chatState.cursorVisible = true // Always show cursor immediately on input
+function positionRealCursor(): void {
+  const metrics = getTerminalMetrics()
+  const inputAreaHeight = calculateInputAreaHeight(metrics)
+
+  // Calculate where the input area starts
+  let inputLinePosition = metrics.height - inputAreaHeight
+
+  // Skip queue preview line if present
+  if (chatState.messageQueue.length > 0) {
+    inputLinePosition += 1
+  }
+  // Skip separator line
+  inputLinePosition += 1
+
+  // Now inputLinePosition points to the actual input line
+  if (chatState.currentInput.length === 0) {
+    // Position cursor at start of input area (after side padding)
+    process.stdout.write(
+      MOVE_CURSOR(inputLinePosition, metrics.sidePadding + 1),
+    )
+  } else {
+    // Calculate cursor position within the input text
+    const wrappedInputLines = wrapLine(
+      chatState.currentInput,
+      metrics.contentWidth,
+    )
+    const lastLineIndex = wrappedInputLines.length - 1
+    const lastLineLength = stringWidth(wrappedInputLines[lastLineIndex] || '')
+
+    const cursorRow = inputLinePosition + lastLineIndex
+    const cursorCol = metrics.sidePadding + 1 + lastLineLength
+
+    process.stdout.write(MOVE_CURSOR(cursorRow, cursorCol))
+  }
+
+  // Show the real cursor
+  process.stdout.write(SHOW_CURSOR)
 }
 
 export function isInChatMode(): boolean {
@@ -238,22 +248,20 @@ export function enterChatBuffer(rl: any, onExit: () => void) {
   process.stdout.write(ENTER_ALT_BUFFER)
   process.stdout.write(CLEAR_SCREEN)
   process.stdout.write(MOVE_CURSOR(1, 1))
-  process.stdout.write(HIDE_CURSOR)
+
+  // Setup the real cursor
+  setupRealCursor()
 
   isInChatBuffer = true
-
-  // Add welcome message
-  addMessage('assistant', WELCOME_MESSAGE, true)
 
   // Setup key handling
   setupChatKeyHandler(rl, onExit)
 
-  // Start cursor blinking
-  startCursorBlink()
-
-  // Initial render
-  updateContentLines()
-  renderChat()
+  // Delay initial render to avoid flicker and ensure terminal is ready
+  setTimeout(() => {
+    addMessage('assistant', WELCOME_MESSAGE, true)
+    positionRealCursor()
+  }, 50)
 }
 
 export function exitChatBuffer(rl: any) {
@@ -262,7 +270,7 @@ export function exitChatBuffer(rl: any) {
   }
 
   resetChatState()
-  stopCursorBlink()
+  restoreDefaultRealCursor()
 
   // Restore all original key handlers
   if (originalKeyHandlers.length > 0) {
@@ -309,7 +317,7 @@ function startStreamingMessage(role: 'user' | 'assistant'): string {
   const messageId = addMessage(role, '', true)
   if (role === 'assistant') {
     chatState.currentStreamingMessageId = messageId
-    const message = chatState.messages.find(m => m.id === messageId)
+    const message = chatState.messages.find((m) => m.id === messageId)
     if (message) {
       message.isStreaming = true
     }
@@ -318,11 +326,11 @@ function startStreamingMessage(role: 'user' | 'assistant'): string {
 }
 
 function appendToStreamingMessage(messageId: string, chunk: string): void {
-  const message = chatState.messages.find(m => m.id === messageId)
+  const message = chatState.messages.find((m) => m.id === messageId)
   if (!message) return
 
   const wasAtBottom = shouldAutoScroll()
-  
+
   message.content += chunk
   updateContentLines()
 
@@ -335,14 +343,14 @@ function appendToStreamingMessage(messageId: string, chunk: string): void {
 }
 
 function finishStreamingMessage(messageId: string): void {
-  const message = chatState.messages.find(m => m.id === messageId)
+  const message = chatState.messages.find((m) => m.id === messageId)
   if (!message) return
 
   message.isStreaming = false
   if (chatState.currentStreamingMessageId === messageId) {
     chatState.currentStreamingMessageId = undefined
   }
-  
+
   updateContentLines()
   renderChat()
 }
@@ -396,11 +404,12 @@ function updateContentLines() {
         }
       })
 
-      // Add streaming indicator for assistant messages that are currently streaming
+      // Add fake visual cursor indicator for assistant messages that are currently streaming
+      // This is NOT the real cursor - it's a visual character (▊) to show streaming status
       if (message.isStreaming && message.role === 'assistant') {
         const indentSize = stringWidth(prefix)
-        const streamingIndicator = ' '.repeat(indentSize) + gray('▊')
-        lines.push(' '.repeat(metrics.sidePadding) + streamingIndicator)
+        const fakeVisualCursor = ' '.repeat(indentSize) + gray('▊')
+        lines.push(' '.repeat(metrics.sidePadding) + fakeVisualCursor)
       }
 
       if (index < chatState.messages.length - 1) {
@@ -475,17 +484,17 @@ function renderChat() {
 
   // Show placeholder or user input
   if (chatState.currentInput.length === 0) {
-    // Show blinking cursor in front of placeholder text
-    const cursor = chatState.cursorVisible ? bold(gray(CURSOR_CHAR)) : ' '
-    const placeholder = `${cursor}\x1b[2m${gray(PLACEHOLDER_TEXT)}\x1b[22m`
+    // Show placeholder text
+    const placeholder = `\x1b[2m${gray(PLACEHOLDER_TEXT)}\x1b[22m`
     process.stdout.write(MOVE_CURSOR(currentLine, 1))
     process.stdout.write(' '.repeat(metrics.sidePadding) + placeholder)
     currentLine++
   } else {
-    // Show user input with cursor when typing
-    const cursor = chatState.cursorVisible ? bold(gray(CURSOR_CHAR)) : ' '
-    const inputWithCursor = chatState.currentInput + cursor
-    const wrappedInputLines = wrapLine(inputWithCursor, metrics.contentWidth)
+    // Show user input
+    const wrappedInputLines = wrapLine(
+      chatState.currentInput,
+      metrics.contentWidth,
+    )
 
     wrappedInputLines.forEach((line, index) => {
       process.stdout.write(MOVE_CURSOR(currentLine, 1))
@@ -498,7 +507,8 @@ function renderChat() {
   process.stdout.write(MOVE_CURSOR(metrics.height, 1))
   process.stdout.write(' '.repeat(metrics.sidePadding) + gray(STATUS_TEXT))
 
-  process.stdout.write(HIDE_CURSOR)
+  // Position the real cursor at input location
+  positionRealCursor()
 }
 
 function setupChatKeyHandler(rl: any, onExit: () => void) {
@@ -534,7 +544,6 @@ function setupChatKeyHandler(rl: any, onExit: () => void) {
         }
         chatState.currentInput = ''
       }
-      updateLastInputTime()
       renderChat()
       return
     }
@@ -542,7 +551,6 @@ function setupChatKeyHandler(rl: any, onExit: () => void) {
     // Handle backspace
     if (key && key.name === 'backspace') {
       chatState.currentInput = chatState.currentInput.slice(0, -1)
-      updateLastInputTime()
       renderChat()
       return
     }
@@ -623,7 +631,6 @@ function setupChatKeyHandler(rl: any, onExit: () => void) {
     // Add printable characters to input
     if (str && str.length === 1 && str.charCodeAt(0) >= 32) {
       chatState.currentInput += str
-      updateLastInputTime()
       renderChat()
     }
   })
@@ -647,12 +654,12 @@ async function sendMessage(message: string, addToChat: boolean = true) {
   try {
     // Start streaming assistant response
     const assistantMessageId = startStreamingMessage('assistant')
-    
+
     // Stream the response chunk by chunk
     await simulateStreamingResponse(message, (chunk) => {
       appendToStreamingMessage(assistantMessageId, chunk)
     })
-    
+
     // Finish streaming
     finishStreamingMessage(assistantMessageId)
   } catch (error) {
@@ -700,25 +707,25 @@ async function simulateStreamingResponse(
   ]
 
   const fullResponse = responses[Math.floor(Math.random() * responses.length)]
-  
+
   // Split response into words for realistic streaming
   const words = fullResponse.split(' ')
-  
+
   // Initial delay before starting to stream
-  await new Promise(resolve => setTimeout(resolve, 800 + Math.random() * 400))
-  
+  await new Promise((resolve) => setTimeout(resolve, 800 + Math.random() * 400))
+
   for (let i = 0; i < words.length; i++) {
     const word = words[i]
     const isLastWord = i === words.length - 1
-    
+
     // Add space before word (except for first word)
     const chunk = (i === 0 ? '' : ' ') + word
     onChunk(chunk)
-    
+
     // Variable delay between words for realistic typing
     if (!isLastWord) {
       const delay = 40 + Math.random() * 120 // 40-160ms between words
-      await new Promise(resolve => setTimeout(resolve, delay))
+      await new Promise((resolve) => setTimeout(resolve, delay))
     }
   }
 }
@@ -726,7 +733,7 @@ async function simulateStreamingResponse(
 // Cleanup function to ensure we exit chat buffer on process termination
 export function cleanupChatBuffer() {
   if (isInChatBuffer) {
-    stopCursorBlink()
+    restoreDefaultRealCursor()
     process.stdout.write(SHOW_CURSOR)
     process.stdout.write(EXIT_ALT_BUFFER)
     isInChatBuffer = false
