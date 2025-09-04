@@ -31,6 +31,7 @@ interface ChatMessage {
   content: string
   timestamp: number
   id: string
+  isStreaming?: boolean
 }
 
 interface TerminalMetrics {
@@ -50,6 +51,7 @@ interface ChatState {
   userHasScrolled: boolean
   lastInputTime: number
   cursorVisible: boolean
+  currentStreamingMessageId?: string
 }
 
 // State
@@ -66,6 +68,7 @@ let chatState: ChatState = {
   userHasScrolled: false,
   lastInputTime: Date.now(),
   cursorVisible: true,
+  currentStreamingMessageId: undefined,
 }
 
 // Cached date formatter for performance
@@ -180,6 +183,7 @@ function resetChatState(): void {
     userHasScrolled: false,
     lastInputTime: Date.now(),
     cursorVisible: true,
+    currentStreamingMessageId: undefined,
   }
 }
 
@@ -280,14 +284,15 @@ function addMessage(
   role: 'user' | 'assistant',
   content: string,
   forceAutoScroll: boolean = false,
-) {
+): string {
   const wasAtBottom = shouldAutoScroll()
 
+  const messageId = `${role}-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`
   chatState.messages.push({
     role,
     content,
     timestamp: Date.now(),
-    id: `${role}-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
+    id: messageId,
   })
   updateContentLines()
 
@@ -296,6 +301,49 @@ function addMessage(
     scrollToBottom()
   }
 
+  renderChat()
+  return messageId
+}
+
+function startStreamingMessage(role: 'user' | 'assistant'): string {
+  const messageId = addMessage(role, '', true)
+  if (role === 'assistant') {
+    chatState.currentStreamingMessageId = messageId
+    const message = chatState.messages.find(m => m.id === messageId)
+    if (message) {
+      message.isStreaming = true
+    }
+  }
+  return messageId
+}
+
+function appendToStreamingMessage(messageId: string, chunk: string): void {
+  const message = chatState.messages.find(m => m.id === messageId)
+  if (!message) return
+
+  const wasAtBottom = shouldAutoScroll()
+  
+  message.content += chunk
+  updateContentLines()
+
+  // Auto-scroll if user was at bottom or following the stream
+  if (wasAtBottom) {
+    scrollToBottom()
+  }
+
+  renderChat()
+}
+
+function finishStreamingMessage(messageId: string): void {
+  const message = chatState.messages.find(m => m.id === messageId)
+  if (!message) return
+
+  message.isStreaming = false
+  if (chatState.currentStreamingMessageId === messageId) {
+    chatState.currentStreamingMessageId = undefined
+  }
+  
+  updateContentLines()
   renderChat()
 }
 
@@ -347,6 +395,13 @@ function updateContentLines() {
           })
         }
       })
+
+      // Add streaming indicator for assistant messages that are currently streaming
+      if (message.isStreaming && message.role === 'assistant') {
+        const indentSize = stringWidth(prefix)
+        const streamingIndicator = ' '.repeat(indentSize) + gray('▊')
+        lines.push(' '.repeat(metrics.sidePadding) + streamingIndicator)
+      }
 
       if (index < chatState.messages.length - 1) {
         lines.push('') // Add spacing between messages
@@ -590,9 +645,16 @@ async function sendMessage(message: string, addToChat: boolean = true) {
   renderChat()
 
   try {
-    // TODO: Replace with actual client integration
-    const response = await simulateAssistantResponse(message)
-    addMessage('assistant', response, true)
+    // Start streaming assistant response
+    const assistantMessageId = startStreamingMessage('assistant')
+    
+    // Stream the response chunk by chunk
+    await simulateStreamingResponse(message, (chunk) => {
+      appendToStreamingMessage(assistantMessageId, chunk)
+    })
+    
+    // Finish streaming
+    finishStreamingMessage(assistantMessageId)
   } catch (error) {
     logger.error({ error }, 'Error sending chat message')
     addMessage(
@@ -623,23 +685,42 @@ async function processMessageQueue() {
   }
 }
 
-// Dummy function to simulate AI response - replace with actual client integration later
-async function simulateAssistantResponse(message: string): Promise<string> {
-  // Simulate processing delay
-  await new Promise((resolve) =>
-    setTimeout(resolve, 1000 + Math.random() * 2000),
-  )
-
-  // Generate a dummy response based on the message
+// Simulates streaming AI response with chunked updates
+async function simulateStreamingResponse(
+  message: string,
+  onChunk: (chunk: string) => void,
+): Promise<void> {
+  // Generate a response based on the message
   const responses = [
-    `I understand you said: "${message}". I'm ready to help with your coding tasks!`,
-    `Thanks for your message: "${message}". How can I assist you with your project?`,
-    `Got it! You mentioned: "${message}". What would you like me to work on?`,
-    `I see you're asking about: "${message}". I can help you implement this feature.`,
-    `Regarding "${message}" - I can definitely help with that. What specific changes do you need?`,
+    `I understand you said: "${message}". I'm ready to help with your coding tasks! Let me break this down for you:\n\n1. First, I'll analyze what you're asking for\n2. Then I'll provide a comprehensive solution\n3. Finally, I'll suggest next steps\n\nThis is a great question that touches on several important concepts. When working with ${message.toLowerCase()}, it's important to consider the broader context and how it fits into your overall project architecture.`,
+    `Thanks for your message: "${message}". How can I assist you with your project? Let me think through this systematically:\n\n• Understanding the requirements\n• Identifying potential solutions\n• Considering best practices\n• Planning implementation steps\n\nBased on what you've described, I can help you implement this feature efficiently. Would you like me to start with a specific approach?`,
+    `Got it! You mentioned: "${message}". What would you like me to work on? This is an interesting challenge that we can tackle together.\n\nHere's how I typically approach problems like this:\n- Analyze the current state\n- Define clear objectives\n- Break down into manageable steps\n- Implement with best practices\n\nI'm excited to help you build something great!`,
+    `I see you're asking about: "${message}". I can help you implement this feature. Let me share some insights:\n\n**Key Considerations:**\n- Performance implications\n- Scalability factors\n- Maintenance requirements\n- User experience impact\n\nThis type of implementation typically involves several moving parts, but I can guide you through each step to ensure we build something robust and maintainable.`,
+    `Regarding "${message}" - I can definitely help with that. What specific changes do you need? This sounds like a fascinating project!\n\nI love working on challenges like this because they often involve:\n• Creative problem-solving\n• Technical innovation\n• Thoughtful design decisions\n• Attention to detail\n\nLet's dive in and create something amazing together. What aspect would you like to focus on first?`,
   ]
 
-  return responses[Math.floor(Math.random() * responses.length)]
+  const fullResponse = responses[Math.floor(Math.random() * responses.length)]
+  
+  // Split response into words for realistic streaming
+  const words = fullResponse.split(' ')
+  
+  // Initial delay before starting to stream
+  await new Promise(resolve => setTimeout(resolve, 800 + Math.random() * 400))
+  
+  for (let i = 0; i < words.length; i++) {
+    const word = words[i]
+    const isLastWord = i === words.length - 1
+    
+    // Add space before word (except for first word)
+    const chunk = (i === 0 ? '' : ' ') + word
+    onChunk(chunk)
+    
+    // Variable delay between words for realistic typing
+    if (!isLastWord) {
+      const delay = 40 + Math.random() * 120 // 40-160ms between words
+      await new Promise(resolve => setTimeout(resolve, delay))
+    }
+  }
 }
 
 // Cleanup function to ensure we exit chat buffer on process termination
