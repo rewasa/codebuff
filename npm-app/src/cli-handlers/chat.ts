@@ -1,19 +1,18 @@
-import { green, yellow, cyan, bold, gray, blue, red, magenta } from 'picocolors'
+import { green, yellow, cyan, bold, gray, blue } from 'picocolors'
 import stringWidth from 'string-width'
 import wrapAnsi from 'wrap-ansi'
 
+import { logger } from '../utils/logger'
 import {
   ENTER_ALT_BUFFER,
   EXIT_ALT_BUFFER,
   CLEAR_SCREEN,
-  HIDE_CURSOR,
   SHOW_CURSOR,
   MOVE_CURSOR,
-  SET_CURSOR_STEADY_BAR,
   SET_CURSOR_DEFAULT,
   DISABLE_CURSOR_BLINK,
+  CURSOR_SET_INVISIBLE_BLOCK,
 } from '../utils/terminal'
-import { logger } from '../utils/logger'
 
 // Constants
 const SIDE_PADDING = 2
@@ -182,18 +181,21 @@ function resetChatState(): void {
 }
 
 function setupRealCursor(): void {
-  // Set the real cursor to steady bar style and disable blinking
-  // This is the actual cursor that shows where typing will occur
-  process.stdout.write(SET_CURSOR_STEADY_BAR)
+  // Hide cursor using invisible block style
+  process.stdout.write(CURSOR_SET_INVISIBLE_BLOCK)
+
+  // Disable cursor blinking for better invisibility
   process.stdout.write(DISABLE_CURSOR_BLINK)
 }
 
 function restoreDefaultRealCursor(): void {
-  // Restore the real cursor to default style
+  // Restore cursor to default style and visibility
   process.stdout.write(SET_CURSOR_DEFAULT)
 }
 
 function positionRealCursor(): void {
+  // Position cursor at the input area where typing occurs
+  // Cursor hiding is handled separately in setupRealCursor()
   const metrics = getTerminalMetrics()
   const inputAreaHeight = calculateInputAreaHeight(metrics)
 
@@ -227,9 +229,6 @@ function positionRealCursor(): void {
 
     process.stdout.write(MOVE_CURSOR(cursorRow, cursorCol))
   }
-
-  // Show the real cursor
-  process.stdout.write(SHOW_CURSOR)
 }
 
 export function isInChatMode(): boolean {
@@ -403,14 +402,6 @@ function updateContentLines() {
           })
         }
       })
-
-      // Add fake visual cursor indicator for assistant messages that are currently streaming
-      // This is NOT the real cursor - it's a visual character (▊) to show streaming status
-      if (message.isStreaming && message.role === 'assistant') {
-        const indentSize = stringWidth(prefix)
-        const fakeVisualCursor = ' '.repeat(indentSize) + gray('▊')
-        lines.push(' '.repeat(metrics.sidePadding) + fakeVisualCursor)
-      }
 
       if (index < chatState.messages.length - 1) {
         lines.push('') // Add spacing between messages

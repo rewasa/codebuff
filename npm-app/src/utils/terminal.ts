@@ -14,17 +14,17 @@ export const SHOW_CURSOR = '\x1b[?25h'
 export const MOVE_CURSOR = (row: number, col: number) => `\x1b[${row};${col}H`
 
 // Cursor style control (DECSCUSR)
-export const SET_CURSOR_STEADY_BLOCK = '\x1b[2 q'
-export const SET_CURSOR_STEADY_BAR = '\x1b[6 q'
 export const SET_CURSOR_DEFAULT = '\x1b[0 q'
 
 // Disable cursor blinking (DEC Private Mode 12)
 export const DISABLE_CURSOR_BLINK = '\x1b[?12l'
-export const ENABLE_CURSOR_BLINK = '\x1b[?12h'
 
 // Alternative cursor control sequences (used in spinner)
 export const HIDE_CURSOR_ALT = '\u001B[?25l'
 export const SHOW_CURSOR_ALT = '\u001B[?25h'
+
+// Invisible cursor style
+export const CURSOR_SET_INVISIBLE_BLOCK = '\x1b[0 q' // Invisible block
 
 // Terminal control utilities
 export const TerminalControl = {
