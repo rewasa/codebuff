@@ -276,21 +276,24 @@ function renderChat() {
   process.stdout.write(
     '\n' + ' '.repeat(sidePadding) + gray('─'.repeat(contentWidth)),
   )
+  // Show placeholder or user input
+  if (currentInput.length === 0) {
+    // Show dimmed placeholder when no input
+    const placeholder = `\x1b[2m${gray('Type your message...')}\x1b[22m`
+    process.stdout.write(`\n${' '.repeat(sidePadding)}${placeholder}`)
+  } else {
+    // Show user input with cursor when typing
+    const cursor = gray('|')
+    const inputWithCursor = currentInput + cursor
+    const wrappedInputLines = wrapLine(inputWithCursor, contentWidth)
 
-  const prompt = bold('Type your message: ')
-  const cursor = currentInput.length === 0 ? gray('|') : ''
-  process.stdout.write(
-    `\n${' '.repeat(sidePadding)}${prompt}${currentInput}${cursor}`,
-  )
+    wrappedInputLines.forEach((line, index) => {
+      process.stdout.write(`\n${' '.repeat(sidePadding)}${line}`)
+    })
+  }
 
   // Status line with side padding
   let statusText = gray('Enter to send • ↑/↓ to scroll • ESC or Ctrl+C to exit')
-
-  if (messageQueue.length > 0) {
-    statusText += gray(
-      ` • ${messageQueue.length} message${messageQueue.length === 1 ? '' : 's'} queued`,
-    )
-  }
 
   process.stdout.write(`\n${' '.repeat(sidePadding)}${statusText}`)
 
