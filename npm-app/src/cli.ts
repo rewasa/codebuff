@@ -69,6 +69,11 @@ import {
   enterSubagentBuffer,
   isInSubagentBufferMode,
 } from './cli-handlers/traces'
+import {
+  cleanupChatBuffer,
+  enterChatBuffer,
+  isInChatMode,
+} from './cli-handlers/chat'
 import { Client } from './client'
 import { backendUrl, websocketUrl } from './config'
 import { CONFIG_DIR } from './credentials'
@@ -1082,6 +1087,19 @@ export class CLI {
       return null
     }
 
+    if (this.isCommandOrAlias(cleanInput, 'chat')) {
+      if (isInChatMode()) {
+        console.log(yellow('Already in chat mode! Press ESC to exit.'))
+        this.freshPrompt()
+        return null
+      }
+
+      enterChatBuffer(this.rl, () => {
+        this.freshPrompt()
+      })
+      return null
+    }
+
     // Checkpoint commands
     if (isCheckpointCommand(cleanInput)) {
       trackEvent(AnalyticsEvent.CHECKPOINT_COMMAND_USED, {
@@ -1351,6 +1369,7 @@ export class CLI {
     cleanupSubagentListBuffer()
     cleanupAgentsBuffer()
     cleanupMiniChat()
+    cleanupChatBuffer()
 
     Spinner.get().restoreCursor()
     process.removeAllListeners('unhandledRejection')

@@ -203,6 +203,14 @@ export const interactiveCommandDetails: CommandInfo[] = [
   },
 
   {
+    baseCommand: 'chat',
+    description: 'Open dedicated chat interface',
+    isSlashCommand: true,
+    commandText: '"chat"',
+    requireSlash: false,
+  },
+
+  {
     commandText: '"exit" or Ctrl-C x2',
     baseCommand: 'exit',
     aliases: ['quit', 'q'],
