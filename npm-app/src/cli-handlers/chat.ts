@@ -24,16 +24,33 @@ const WELCOME_MESSAGE =
 const QUEUE_ARROW = '↑'
 const SEPARATOR_CHAR = '─'
 
+// Subagent tree types
+export interface SubagentNode {
+  id: string
+  type: string
+  content: string
+  children: SubagentNode[]
+  postContent?: string
+}
+
+export interface SubagentUIState {
+  expanded: Set<string>
+  focusNodeId: string | null
+  firstChildProgress: Map<string, number>
+}
+
 // Interfaces
-interface ChatMessage {
+export interface ChatMessage {
   role: 'user' | 'assistant'
   content: string
   timestamp: number
   id: string
   isStreaming?: boolean
+  subagentTree?: SubagentNode // Root node for assistant messages
+  subagentUIState?: SubagentUIState // UI state for the tree
 }
 
-interface TerminalMetrics {
+export interface TerminalMetrics {
   height: number
   width: number
   contentWidth: number
@@ -49,6 +66,7 @@ interface ChatState {
   messageQueue: string[]
   userHasScrolled: boolean
   currentStreamingMessageId?: string
+  navigationMode: boolean // New: track if we're in navigation mode
 }
 
 // State
@@ -63,6 +81,7 @@ let chatState: ChatState = {
   messageQueue: [],
   userHasScrolled: false,
   currentStreamingMessageId: undefined,
+  navigationMode: false, // Initialize navigation mode
 }
 
 // Cached date formatter for performance
@@ -85,7 +104,7 @@ function getTerminalMetrics(): TerminalMetrics {
   }
 }
 
-function wrapLine(line: string, terminalWidth: number): string[] {
+export function wrapLine(line: string, terminalWidth: number): string[] {
   if (!line) return ['']
   if (stringWidth(line) <= terminalWidth) {
     return [line]
@@ -177,6 +196,7 @@ function resetChatState(): void {
     messageQueue: [],
     userHasScrolled: false,
     currentStreamingMessageId: undefined,
+    navigationMode: false,
   }
 }
 
@@ -354,6 +374,78 @@ function finishStreamingMessage(messageId: string): void {
   renderChat()
 }
 
+export function renderAssistantMessage(
+  message: ChatMessage,
+  metrics: TerminalMetrics,
+  timeFormatter: Intl.DateTimeFormat,
+): string[] {
+  const lines: string[] = []
+  const timeStr = timeFormatter.format(new Date(message.timestamp))
+
+  // Assistant messages: metadata on one line, content on next line with tree symbol
+  const metadata = `${bold(blue('Assistant'))} ${gray(`[${timeStr}]`)}`
+  lines.push(' '.repeat(metrics.sidePadding) + metadata)
+
+  if (message.content && message.content.trim()) {
+    const contentLines = message.content.split('\n')
+    const hasSubagents =
+      message.subagentTree &&
+      message.subagentTree.children &&
+      message.subagentTree.children.length > 0
+    const treePrefix = hasSubagents ? '├─ ' : '└─ '
+
+    contentLines.forEach((line) => {
+      const treeLine = treePrefix + line
+      const wrappedLines = wrapLine(treeLine, metrics.contentWidth)
+      wrappedLines.forEach((wrappedLine, wrapIndex) => {
+        if (wrapIndex === 0) {
+          // First wrapped line uses the full tree line
+          lines.push(' '.repeat(metrics.sidePadding) + wrappedLine)
+        } else {
+          // Continuation lines need to align with the content after the tree prefix
+          const indentSize = stringWidth(treePrefix)
+          const indentedLine = ' '.repeat(indentSize) + wrappedLine.trimStart()
+          lines.push(' '.repeat(metrics.sidePadding) + indentedLine)
+        }
+      })
+    })
+  }
+
+  return lines
+}
+
+export function renderUserMessage(
+  message: ChatMessage,
+  metrics: TerminalMetrics,
+  timeFormatter: Intl.DateTimeFormat,
+): string[] {
+  const lines: string[] = []
+  const timeStr = timeFormatter.format(new Date(message.timestamp))
+
+  // User messages: keep original format
+  const prefix = `${bold(green('You'))} ${gray(`[${timeStr}]`)}: `
+  const contentLines = message.content.split('\n')
+  contentLines.forEach((line, lineIndex) => {
+    if (lineIndex === 0) {
+      const fullLine = prefix + line
+      const wrappedLines = wrapLine(fullLine, metrics.contentWidth)
+      wrappedLines.forEach((wrappedLine) => {
+        lines.push(' '.repeat(metrics.sidePadding) + wrappedLine)
+      })
+    } else {
+      // Indent continuation lines to align with message content
+      const indentSize = stringWidth(prefix)
+      const indentedLine = ' '.repeat(indentSize) + line
+      const wrappedLines = wrapLine(indentedLine, metrics.contentWidth)
+      wrappedLines.forEach((wrappedLine) => {
+        lines.push(' '.repeat(metrics.sidePadding) + wrappedLine)
+      })
+    }
+  })
+
+  return lines
+}
+
 function updateContentLines() {
   const metrics = getTerminalMetrics()
   const lines: string[] = []
@@ -377,31 +469,26 @@ function updateContentLines() {
   } else {
     // Add chat messages with side padding
     chatState.messages.forEach((message, index) => {
-      const timeStr = timeFormatter.format(new Date(message.timestamp))
+      if (message.role === 'assistant') {
+        lines.push(...renderAssistantMessage(message, metrics, timeFormatter))
+      } else {
+        lines.push(...renderUserMessage(message, metrics, timeFormatter))
+      }
 
-      const prefix =
-        message.role === 'assistant'
-          ? `${bold(blue('Assistant'))} ${gray(`[${timeStr}]`)}: `
-          : `${bold(green('You'))} ${gray(`[${timeStr}]`)}: `
-
-      const contentLines = message.content.split('\n')
-      contentLines.forEach((line, lineIndex) => {
-        if (lineIndex === 0) {
-          const fullLine = prefix + line
-          const wrappedLines = wrapLine(fullLine, metrics.contentWidth)
-          wrappedLines.forEach((wrappedLine) => {
-            lines.push(' '.repeat(metrics.sidePadding) + wrappedLine)
-          })
-        } else {
-          // Indent continuation lines to align with message content
-          const indentSize = stringWidth(prefix)
-          const indentedLine = ' '.repeat(indentSize) + line
-          const wrappedLines = wrapLine(indentedLine, metrics.contentWidth)
-          wrappedLines.forEach((wrappedLine) => {
-            lines.push(' '.repeat(metrics.sidePadding) + wrappedLine)
-          })
-        }
-      })
+      // Add subagent tree if this is an assistant message with a tree
+      if (
+        message.role === 'assistant' &&
+        message.subagentTree &&
+        message.subagentUIState
+      ) {
+        const treeLines = renderSubagentTree(
+          message.subagentTree,
+          message.subagentUIState,
+          metrics,
+          message.id,
+        )
+        lines.push(...treeLines)
+      }
 
       if (index < chatState.messages.length - 1) {
         lines.push('') // Add spacing between messages
@@ -522,6 +609,31 @@ function setupChatKeyHandler(rl: any, onExit: () => void) {
       return
     }
 
+    // Handle subagent navigation first
+    if (handleSubagentNavigation(key)) {
+      return
+    }
+
+    // Check for Shift+Right to enter navigation mode
+    if (key && key.shift && key.name === 'right' && !chatState.navigationMode) {
+      initializeNavigationMode()
+      return
+    }
+
+    // ESC exits navigation mode
+    if (key && key.name === 'escape' && chatState.navigationMode) {
+      chatState.navigationMode = false
+      // Clear focus from all messages
+      chatState.messages.forEach((message) => {
+        if (message.subagentUIState) {
+          message.subagentUIState.focusNodeId = null
+        }
+      })
+      updateContentLines()
+      renderChat()
+      return
+    }
+
     // Handle Enter - send message (always allow queuing)
     if (key && key.name === 'return') {
       const message = chatState.currentInput.trim()
@@ -535,6 +647,13 @@ function setupChatKeyHandler(rl: any, onExit: () => void) {
         }
         chatState.currentInput = ''
       }
+      // Exit navigation mode when sending a message
+      chatState.navigationMode = false
+      chatState.messages.forEach((message) => {
+        if (message.subagentUIState) {
+          message.subagentUIState.focusNodeId = null
+        }
+      })
       renderChat()
       return
     }
@@ -662,6 +781,13 @@ async function sendMessage(message: string, addToChat: boolean = true) {
     )
   } finally {
     chatState.isWaitingForResponse = false
+
+    // Auto-focus the latest assistant message if it has subagents
+    const latestMessageId = findLatestAssistantMessageWithChildren()
+    if (latestMessageId && !chatState.navigationMode) {
+      initializeNavigationMode()
+    }
+
     renderChat()
 
     // Process queued messages
@@ -683,27 +809,23 @@ async function processMessageQueue() {
   }
 }
 
-// Simulates streaming AI response with chunked updates
-async function simulateStreamingResponse(
-  message: string,
+// Helper function to stream content from a node recursively (depth-first)
+async function streamContentRecursively(
+  node: {
+    content: string
+    agent: string
+    postContent?: string
+    children?: Array<{
+      content: string
+      agent: string
+      postContent?: string
+      children?: any
+    }>
+  },
   onChunk: (chunk: string) => void,
 ): Promise<void> {
-  // Generate a response based on the message
-  const responses = [
-    `I understand you said: "${message}". I'm ready to help with your coding tasks! Let me break this down for you:\n\n1. First, I'll analyze what you're asking for\n2. Then I'll provide a comprehensive solution\n3. Finally, I'll suggest next steps\n\nThis is a great question that touches on several important concepts. When working with ${message.toLowerCase()}, it's important to consider the broader context and how it fits into your overall project architecture.`,
-    `Thanks for your message: "${message}". How can I assist you with your project? Let me think through this systematically:\n\n• Understanding the requirements\n• Identifying potential solutions\n• Considering best practices\n• Planning implementation steps\n\nBased on what you've described, I can help you implement this feature efficiently. Would you like me to start with a specific approach?`,
-    `Got it! You mentioned: "${message}". What would you like me to work on? This is an interesting challenge that we can tackle together.\n\nHere's how I typically approach problems like this:\n- Analyze the current state\n- Define clear objectives\n- Break down into manageable steps\n- Implement with best practices\n\nI'm excited to help you build something great!`,
-    `I see you're asking about: "${message}". I can help you implement this feature. Let me share some insights:\n\n**Key Considerations:**\n- Performance implications\n- Scalability factors\n- Maintenance requirements\n- User experience impact\n\nThis type of implementation typically involves several moving parts, but I can guide you through each step to ensure we build something robust and maintainable.`,
-    `Regarding "${message}" - I can definitely help with that. What specific changes do you need? This sounds like a fascinating project!\n\nI love working on challenges like this because they often involve:\n• Creative problem-solving\n• Technical innovation\n• Thoughtful design decisions\n• Attention to detail\n\nLet's dive in and create something amazing together. What aspect would you like to focus on first?`,
-  ]
-
-  const fullResponse = responses[Math.floor(Math.random() * responses.length)]
-
-  // Split response into words for realistic streaming
-  const words = fullResponse.split(' ')
-
-  // Initial delay before starting to stream
-  await new Promise((resolve) => setTimeout(resolve, 800 + Math.random() * 400))
+  // Stream the current node's content
+  const words = node.content.split(' ')
 
   for (let i = 0; i < words.length; i++) {
     const word = words[i]
@@ -719,6 +841,201 @@ async function simulateStreamingResponse(
       await new Promise((resolve) => setTimeout(resolve, delay))
     }
   }
+
+  // If this node has children, recursively stream their content
+  if (node.children && node.children.length > 0) {
+    for (const child of node.children) {
+      // Small pause before each child
+      await new Promise((resolve) =>
+        setTimeout(resolve, 100 + Math.random() * 200),
+      )
+      await streamContentRecursively(child, onChunk)
+    }
+  }
+
+  // After all children are finished, stream the postContent if it exists
+  if (node.postContent) {
+    // Small pause before postContent
+    await new Promise((resolve) =>
+      setTimeout(resolve, 100 + Math.random() * 200),
+    )
+
+    const postWords = node.postContent.split(' ')
+    for (let i = 0; i < postWords.length; i++) {
+      const word = postWords[i]
+      const isLastWord = i === postWords.length - 1
+
+      // Add space before word (except for first word)
+      const chunk = (i === 0 ? '' : ' ') + word
+      onChunk(chunk)
+
+      // Variable delay between words for realistic typing
+      if (!isLastWord) {
+        const delay = 40 + Math.random() * 120 // 40-160ms between words
+        await new Promise((resolve) => setTimeout(resolve, delay))
+      }
+    }
+  }
+}
+
+// Simulates streaming AI response with chunked updates
+async function simulateStreamingResponse(
+  message: string,
+  onChunk: (chunk: string) => void,
+): Promise<void> {
+  // Generate a response based on the message - now structured as tree with children and postContent
+  const responses = [
+    {
+      content: `I'll analyze your codebase structure and implement the requested changes.`,
+      agent: 'assistant',
+      postContent: `All changes have been successfully applied and tested.`,
+      children: [
+        {
+          content: `src/\n├── components/           # React UI components\n│   ├── Button.tsx        # Reusable button component\n│   ├── Modal.tsx         # Modal dialog component\n│   └── Layout/           # Layout components\n│       ├── Header.tsx    # Main navigation header\n│       └── Sidebar.tsx   # Navigation sidebar\n│\n├── hooks/               # Custom React hooks\n│   ├── useAuth.ts       # Authentication state management\n│   ├── useApi.ts        # API call abstraction\n│   └── useLocalStorage.ts # Local storage utilities\n│\n├── utils/               # Utility functions\n│   ├── validation.ts    # Form validation helpers\n│   ├── formatting.ts    # Data formatting utilities\n│   └── constants.ts     # Application constants\n│\n└── types/               # TypeScript type definitions\n    ├── api.ts          # API response types\n    └── user.ts         # User-related types`,
+          agent: 'file-explorer',
+          children: [],
+        },
+      ],
+    },
+    {
+      content: `I'll set up the backend architecture with proper separation of concerns.`,
+      agent: 'assistant',
+      postContent: `Backend services are now properly organized and documented.`,
+      children: [
+        {
+          content: `backend/\n├── api/                 # REST API endpoints\n│   ├── routes/          # Route definitions\n│   │   ├── auth.ts      # Authentication endpoints\n│   │   ├── users.ts     # User management endpoints\n│   │   └── posts.ts     # Content management endpoints\n│   │\n│   ├── middleware/      # Express middleware\n│   │   ├── auth.ts      # JWT authentication middleware\n│   │   ├── validation.ts # Request validation middleware\n│   │   └── errorHandler.ts # Global error handling\n│   │\n│   └── controllers/     # Business logic controllers\n│       ├── AuthController.ts # Authentication logic\n│       └── UserController.ts # User management logic\n│\n├── database/           # Database configuration\n│   ├── migrations/     # Database schema migrations\n│   ├── models/         # ORM models\n│   └── seeders/        # Test data seeders\n│\n└── services/           # External service integrations\n    ├── EmailService.ts # Email sending service\n    └── StorageService.ts # File storage service`,
+          agent: 'file-explorer',
+          children: [
+            {
+              content: `Database schema optimized for performance\nAPI endpoints follow RESTful conventions\nMiddleware properly handles authentication`,
+              agent: 'reviewer',
+              children: [],
+            },
+          ],
+        },
+      ],
+    },
+    {
+      content: `I'll implement comprehensive testing structure for the project.`,
+      agent: 'assistant',
+      postContent: `Testing infrastructure is now complete with 95% code coverage.`,
+      children: [
+        {
+          content: `tests/\n├── unit/               # Unit tests\n│   ├── components/      # Component tests\n│   │   ├── Button.test.tsx # Button component tests\n│   │   └── Modal.test.tsx  # Modal component tests\n│   │\n│   ├── utils/           # Utility function tests\n│   │   ├── validation.test.ts # Validation tests\n│   │   └── formatting.test.ts # Formatting tests\n│   │\n│   └── services/        # Service layer tests\n│       ├── AuthService.test.ts # Auth service tests\n│       └── ApiService.test.ts  # API service tests\n│\n├── integration/        # Integration tests\n│   ├── api/            # API endpoint tests\n│   │   ├── auth.test.ts # Authentication flow tests\n│   │   └── users.test.ts # User management tests\n│   │\n│   └── database/       # Database integration tests\n│       └── models.test.ts # Model relationship tests\n│\n├── e2e/               # End-to-end tests\n│   ├── user-journey.test.ts # Complete user flows\n│   └── admin-panel.test.ts  # Admin functionality tests\n│\n└── fixtures/           # Test data and mocks\n    ├── mockData.ts     # Mock API responses\n    └── testUsers.ts    # Test user accounts`,
+          agent: 'file-explorer',
+          children: [],
+        },
+      ],
+    },
+    {
+      content: `I'll configure the development and deployment pipeline.`,
+      agent: 'assistant',
+      postContent: `CI/CD pipeline configured with automated testing and deployment.`,
+      children: [
+        {
+          content: `config/\n├── docker/             # Container configuration\n│   ├── Dockerfile      # Production container setup\n│   ├── docker-compose.yml # Development environment\n│   └── nginx.conf      # Reverse proxy configuration\n│\n├── ci/                 # Continuous integration\n│   ├── .github/        # GitHub Actions workflows\n│   │   ├── test.yml    # Automated testing pipeline\n│   │   ├── build.yml   # Build and package pipeline\n│   │   └── deploy.yml  # Deployment pipeline\n│   │\n│   └── scripts/        # Build and deployment scripts\n│       ├── build.sh    # Production build script\n│       ├── test.sh     # Test execution script\n│       └── deploy.sh   # Deployment automation\n│\n├── environments/       # Environment configurations\n│   ├── development.env # Development settings\n│   ├── staging.env     # Staging environment\n│   └── production.env  # Production settings\n│\n└── monitoring/         # Application monitoring\n    ├── logging.config  # Centralized logging setup\n    ├── metrics.config  # Performance metrics\n    └── alerts.config   # Error alerting rules`,
+          agent: 'file-explorer',
+          children: [
+            {
+              content: `✅ Docker containers optimized for production\n✅ CI/CD pipeline includes security scanning\n✅ Monitoring covers all critical paths`,
+              agent: 'system',
+              children: [],
+            },
+          ],
+        },
+      ],
+    },
+    {
+      content: `I'll organize the documentation and knowledge management system.`,
+      agent: 'assistant',
+      postContent: `Documentation is now comprehensive and easily maintainable.`,
+      children: [
+        {
+          content: `docs/\n├── api/                # API documentation\n│   ├── openapi.yml     # OpenAPI specification\n│   ├── authentication.md # Auth guide\n│   └── endpoints/      # Detailed endpoint docs\n│       ├── users.md    # User endpoints\n│       └── posts.md    # Content endpoints\n│\n├── guides/             # Developer guides\n│   ├── getting-started.md # Quick start guide\n│   ├── development.md  # Development workflow\n│   ├── testing.md      # Testing guidelines\n│   └── deployment.md   # Deployment procedures\n│\n├── architecture/       # System architecture\n│   ├── overview.md     # High-level architecture\n│   ├── database.md     # Database design\n│   ├── security.md     # Security considerations\n│   └── performance.md  # Performance guidelines\n│\n└── examples/           # Code examples\n    ├── api-usage.md    # API usage examples\n    ├── integration.md  # Integration examples\n    └── troubleshooting.md # Common issues`,
+          agent: 'file-explorer',
+          children: [],
+        },
+      ],
+    },
+    {
+      content: `Let me examine and refactor the existing codebase for better maintainability.`,
+      agent: 'assistant',
+      postContent: `Codebase has been successfully refactored with improved structure and performance.`,
+      children: [
+        {
+          content: `refactoring/\n├── analysis/           # Code analysis results\n│   ├── complexity.json # Cyclomatic complexity metrics\n│   ├── dependencies.json # Dependency analysis\n│   └── coverage.json   # Test coverage report\n│\n├── improvements/       # Identified improvements\n│   ├── performance/    # Performance optimizations\n│   │   ├── lazy-loading.ts # Component lazy loading\n│   │   ├── memoization.ts  # React memoization\n│   │   └── bundling.ts     # Code splitting strategy\n│   │\n│   ├── maintainability/ # Code maintainability\n│   │   ├── extract-hooks.ts # Custom hook extraction\n│   │   ├── component-split.ts # Component decomposition\n│   │   └── type-safety.ts    # TypeScript improvements\n│   │\n│   └── scalability/    # Scalability enhancements\n│       ├── state-management.ts # Redux/Zustand setup\n│       ├── caching-strategy.ts # Data caching\n│       └── error-boundaries.ts # Error handling\n│\n└── migration/          # Migration strategies\n    ├── legacy-cleanup.md # Legacy code removal\n    ├── api-versioning.md # API version management\n    └── database-migration.md # Database updates`,
+          agent: 'thinker',
+          children: [
+            {
+              content: `Code complexity reduced by 40%\nBundle size optimized by 25%\nTest coverage increased to 95%`,
+              agent: 'reviewer',
+              children: [],
+            },
+          ],
+        },
+      ],
+    },
+  ]
+
+  const selectedResponse =
+    responses[Math.floor(Math.random() * responses.length)]
+
+  // Initial delay before starting to stream
+  await new Promise((resolve) => setTimeout(resolve, 800 + Math.random() * 400))
+
+  // Stream only the main content (not the children or postContent)
+  const words = selectedResponse.content.split(' ')
+  for (let i = 0; i < words.length; i++) {
+    const word = words[i]
+    const isLastWord = i === words.length - 1
+    const chunk = (i === 0 ? '' : ' ') + word
+    onChunk(chunk)
+
+    if (!isLastWord) {
+      const delay = 40 + Math.random() * 120
+      await new Promise((resolve) => setTimeout(resolve, delay))
+    }
+  }
+
+  // After streaming main content, set up the subagent tree
+  if (chatState.currentStreamingMessageId) {
+    const streamingMessage = chatState.messages.find(
+      (m) => m.id === chatState.currentStreamingMessageId,
+    )
+    if (streamingMessage && selectedResponse.children) {
+      // Build subagent tree from the selected response
+      const tree = buildSubagentTree(selectedResponse)
+
+      // Update the tree with the correct message ID
+      function updateNodeIds(
+        node: SubagentNode,
+        path: number[] = [],
+      ): SubagentNode {
+        const nodeId = createNodeId(streamingMessage!.id, path)
+        return {
+          ...node,
+          id: nodeId,
+          children: node.children.map((child, index) =>
+            updateNodeIds(child, [...path, index]),
+          ),
+        }
+      }
+
+      streamingMessage.subagentTree = updateNodeIds(tree)
+      streamingMessage.subagentUIState = {
+        expanded: new Set([createNodeId(streamingMessage.id, [0])]), // Auto-expand first child
+        focusNodeId: null,
+        firstChildProgress: new Map(),
+      }
+
+      // Add parent's postContent to tree if it exists
+      if (selectedResponse.postContent) {
+        streamingMessage.subagentTree.postContent = selectedResponse.postContent
+      }
+    }
+  }
+
+  // postContent will be rendered as part of the subagent tree, not streamed separately
 }
 
 // Cleanup function to ensure we exit chat buffer on process termination
@@ -740,3 +1057,312 @@ export function cleanupChatBuffer() {
 process.on('exit', cleanupChatBuffer)
 process.on('SIGINT', cleanupChatBuffer)
 process.on('SIGTERM', cleanupChatBuffer)
+
+// New: Subagent tree utilities
+export function createNodeId(messageId: string, path: number[] = []): string {
+  if (path.length === 0) return `m:${messageId}`
+  return `m:${messageId}/${path.join('/')}`
+}
+
+function parseNodePath(nodeId: string): { messageId: string; path: number[] } {
+  const parts = nodeId.split('/')
+  const messageId = parts[0].substring(2) // Remove 'm:' prefix
+  const path = parts.slice(1).map(Number)
+  return { messageId, path }
+}
+
+function findNodeByPath(
+  tree: SubagentNode,
+  path: number[],
+): SubagentNode | null {
+  let current = tree
+  for (const index of path) {
+    if (!current.children || index >= current.children.length) {
+      return null
+    }
+    current = current.children[index]
+  }
+  return current
+}
+
+function buildSubagentTree(mockResponse: any): SubagentNode {
+  function convertNode(node: any, path: number[] = []): SubagentNode {
+    const nodeId = createNodeId('temp', path)
+    const children = (node.children || []).map((child: any, index: number) =>
+      convertNode(child, [...path, index]),
+    )
+
+    return {
+      id: nodeId,
+      type: node.agent || 'unknown',
+      content: node.content || '',
+      children,
+      postContent: node.postContent,
+    }
+  }
+
+  return convertNode(mockResponse)
+}
+
+export function renderSubagentTree(
+  tree: SubagentNode,
+  uiState: SubagentUIState,
+  metrics: TerminalMetrics,
+  messageId: string,
+): string[] {
+  const lines: string[] = []
+
+  function renderNode(
+    node: SubagentNode,
+    depth: number,
+    path: number[] = [],
+    isLastChild: boolean = false,
+    ancestorLines: boolean[] = [],
+  ): void {
+    const nodeId = createNodeId(messageId, path)
+    const hasChildren = node.children && node.children.length > 0
+    const isExpanded = uiState.expanded.has(nodeId)
+    const isFocused = uiState.focusNodeId === nodeId
+
+    // Build tree prefix with proper vertical connectors for hierarchical structure
+    let treePrefix = ''
+
+    // Add vertical lines and spaces for ancestor levels
+    for (let i = 0; i < depth; i++) {
+      if (i < ancestorLines.length && ancestorLines[i]) {
+        treePrefix += '│   ' // Vertical line for continuing ancestors
+      } else {
+        treePrefix += '    ' // Empty space for finished ancestors
+      }
+    }
+
+    // Add connector for current level
+    treePrefix += isLastChild ? '└─ ' : '├─ '
+
+    // Create type label
+    const typeLabel = node.type ? `[${node.type}] ` : ''
+    const firstLine = node.content.split('\n')[0] || '(empty)'
+
+    // Build header line with proper tree structure
+    const header = `${treePrefix}${typeLabel}${firstLine}`
+
+    // Apply focus highlighting
+    const displayLine = isFocused ? `\x1b[7m${header}\x1b[27m` : header
+
+    // Wrap the line properly with side padding
+    const wrappedLines = wrapLine(displayLine, metrics.contentWidth)
+    wrappedLines.forEach((wrappedLine) => {
+      lines.push(' '.repeat(metrics.sidePadding) + wrappedLine)
+    })
+
+    // Render children if expanded
+    if (hasChildren && isExpanded) {
+      node.children.forEach((child, index) => {
+        const isChildLastChild = index === node.children.length - 1
+        // Build new ancestor lines array: current node contributes a line if not the last child
+        const newAncestorLines = [...ancestorLines]
+        if (depth < newAncestorLines.length) {
+          newAncestorLines[depth] = !isLastChild
+        } else {
+          newAncestorLines.push(!isLastChild)
+        }
+
+        renderNode(
+          child,
+          depth + 1,
+          [...path, index],
+          isChildLastChild,
+          newAncestorLines,
+        )
+      })
+    }
+
+    // Render postContent after children (if it has any and node is expanded)
+    if (node.postContent && isExpanded) {
+      const postLines = node.postContent.split('\n')
+      postLines.forEach((line) => {
+        if (line.trim()) {
+          // Build prefix for postContent - appears as final child of this node
+          let postPrefix = ''
+          for (let i = 0; i < depth; i++) {
+            if (i < ancestorLines.length && ancestorLines[i]) {
+              postPrefix += '│   '
+            } else {
+              postPrefix += '    '
+            }
+          }
+          if (depth > 0) {
+            postPrefix += '└─ ' // PostContent is always the last item
+          }
+
+          const postLine = `${postPrefix}${line}`
+          const wrappedPostLines = wrapLine(postLine, metrics.contentWidth)
+          wrappedPostLines.forEach((wrappedLine) => {
+            lines.push(' '.repeat(metrics.sidePadding) + wrappedLine)
+          })
+        }
+      })
+    }
+  }
+
+  // Only render if there are children to show
+  if (tree.children && tree.children.length > 0) {
+    // Render each top-level child starting from depth 1 to nest them inside parent content
+    tree.children.forEach((child, index) => {
+      const isLastChild = index === tree.children.length - 1
+      renderNode(child, 1, [index], isLastChild, [true]) // Start at depth 1 with parent line
+    })
+
+    // Render parent's postContent after all subagent children (if it exists)
+    if (tree.postContent) {
+      const postLines = tree.postContent.split('\n')
+      postLines.forEach((line) => {
+        if (line.trim()) {
+          const postLine = `└─ ${line}` // Simple connector for parent postContent
+          const wrappedPostLines = wrapLine(postLine, metrics.contentWidth)
+          wrappedPostLines.forEach((wrappedLine) => {
+            lines.push(' '.repeat(metrics.sidePadding) + wrappedLine)
+          })
+        }
+      })
+    }
+  }
+
+  return lines
+}
+
+function findLatestAssistantMessageWithChildren(): string | null {
+  // Find the most recent completed assistant message that has children
+  for (let i = chatState.messages.length - 1; i >= 0; i--) {
+    const message = chatState.messages[i]
+    if (
+      message.role === 'assistant' &&
+      !message.isStreaming &&
+      message.subagentTree &&
+      message.subagentTree.children &&
+      message.subagentTree.children.length > 0
+    ) {
+      return message.id
+    }
+  }
+  return null
+}
+
+function handleSubagentNavigation(key: any): boolean {
+  if (!chatState.navigationMode) return false
+
+  // Find the currently focused message
+  const focusedMessage = chatState.messages.find(
+    (m) => m.subagentUIState?.focusNodeId,
+  )
+
+  if (
+    !focusedMessage ||
+    !focusedMessage.subagentTree ||
+    !focusedMessage.subagentUIState
+  ) {
+    return false
+  }
+
+  const tree = focusedMessage.subagentTree
+  const uiState = focusedMessage.subagentUIState
+
+  if (key.shift && key.name === 'right') {
+    // Shift+Right: Open or navigate deeper
+    if (!uiState.focusNodeId) return true
+
+    const { path } = parseNodePath(uiState.focusNodeId)
+    const focusedNode = findNodeByPath(tree, path)
+
+    if (!focusedNode) return true
+
+    const isExpanded = uiState.expanded.has(uiState.focusNodeId)
+
+    if (!isExpanded) {
+      // Open the focused node and close all its descendants
+      uiState.expanded.add(uiState.focusNodeId)
+      // Remove any descendant nodes from expanded set
+      const descendantPrefix = uiState.focusNodeId + '/'
+      uiState.expanded.forEach((nodeId) => {
+        if (nodeId.startsWith(descendantPrefix)) {
+          uiState.expanded.delete(nodeId)
+        }
+      })
+      uiState.firstChildProgress.set(uiState.focusNodeId, 0)
+    } else {
+      // Navigate to first child or next sibling in DFS order
+      const progress = uiState.firstChildProgress.get(uiState.focusNodeId) || 0
+
+      if (focusedNode.children && progress < focusedNode.children.length) {
+        const childPath = [...path, progress]
+        const childNodeId = createNodeId(focusedMessage.id, childPath)
+        uiState.focusNodeId = childNodeId
+        uiState.firstChildProgress.set(uiState.focusNodeId, 0)
+        uiState.firstChildProgress.set(focusedMessage.id, progress + 1)
+      }
+    }
+
+    updateContentLines()
+    renderChat()
+    return true
+  }
+
+  if (key.shift && key.name === 'left') {
+    // Shift+Left: Close or navigate up
+    if (!uiState.focusNodeId) return true
+
+    const isExpanded = uiState.expanded.has(uiState.focusNodeId)
+
+    if (isExpanded) {
+      // Close the focused node
+      uiState.expanded.delete(uiState.focusNodeId)
+      // Remove all descendant nodes from expanded set
+      const descendantPrefix = uiState.focusNodeId + '/'
+      uiState.expanded.forEach((nodeId) => {
+        if (nodeId.startsWith(descendantPrefix)) {
+          uiState.expanded.delete(nodeId)
+        }
+      })
+    } else {
+      // Move focus to parent
+      const { path } = parseNodePath(uiState.focusNodeId)
+      if (path.length > 0) {
+        const parentPath = path.slice(0, -1)
+        const parentNodeId = createNodeId(focusedMessage.id, parentPath)
+        uiState.focusNodeId = parentNodeId
+      }
+    }
+
+    updateContentLines()
+    renderChat()
+    return true
+  }
+
+  return false
+}
+
+function initializeNavigationMode(): void {
+  if (chatState.navigationMode) return
+
+  const latestMessageId = findLatestAssistantMessageWithChildren()
+  if (!latestMessageId) return
+
+  const message = chatState.messages.find((m) => m.id === latestMessageId)
+  if (!message || !message.subagentTree) return
+
+  // Initialize UI state if not exists
+  if (!message.subagentUIState) {
+    message.subagentUIState = {
+      expanded: new Set(),
+      focusNodeId: null,
+      firstChildProgress: new Map(),
+    }
+  }
+
+  // Set focus to the root node
+  message.subagentUIState.focusNodeId = createNodeId(message.id, [])
+
+  chatState.navigationMode = true
+  updateContentLines()
+  renderChat()
+}
