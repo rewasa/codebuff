@@ -55,6 +55,18 @@ Codebuff is a tool for editing codebases via natural language instruction to Buf
 - ESC key to toggle menu or stop AI response
 - CTRL+C to exit the application
 
+### Terminal Key Compatibility
+
+**Cross-Platform Navigation**: For maximum compatibility across terminal emulators:
+
+- Use `Ctrl+Tab/Ctrl+Shift+Tab` for hint navigation - works reliably everywhere and avoids conflicts with normal Tab behavior
+- Use `Enter` to send messages or expand nodes (context-aware) - prioritizes chat functionality
+- Use `Backspace` to delete characters or collapse nodes (context-aware) - prioritizes chat functionality
+- `Ctrl+Up/Down` is unreliable on macOS
+- `Shift+Arrow` combinations have mixed compatibility
+- Emacs/readline shortcuts (`Ctrl+A`, `Ctrl+E`, etc.) are the most reliable cross-platform
+- Avoid `Option/Meta` keys when possible as they require terminal configuration on macOS
+
 ## Package Management
 
 - Use Bun for all package management operations
@@ -270,6 +282,7 @@ The `.bin/bun` script automatically wraps bun commands with infisical when secre
 **Worktree Support**: The wrapper automatically detects and loads `.env.worktree` files when present, allowing worktrees to override Infisical environment variables (like ports) for local development. This enables multiple worktrees to run simultaneously on different ports without conflicts.
 
 The wrapper also loads environment variables in the correct precedence order:
+
 1. Infisical secrets are loaded first (if needed)
 2. `.env.worktree` is loaded second to override any conflicting variables
 3. This ensures worktree-specific overrides (like custom ports) always take precedence over cached Infisical defaults

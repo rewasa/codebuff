@@ -17,7 +17,8 @@ import {
 // Constants
 const SIDE_PADDING = 2
 const HEADER_TEXT = '💬 Codebuff Chat'
-const STATUS_TEXT = 'Shift + →/← to view agent traces • ESC or Ctrl+C to exit'
+const STATUS_TEXT =
+  'Ctrl+Tab/Ctrl+Shift+Tab to navigate hints • Enter to expand/send • Backspace to collapse/delete • ESC or Ctrl+C to exit'
 const PLACEHOLDER_TEXT = 'Type your message...'
 const WELCOME_MESSAGE =
   'Welcome to Codebuff Chat! Type your messages below and press Enter to send. This is a dedicated chat interface for conversations with your AI assistant.'
@@ -68,7 +69,6 @@ interface ChatState {
   messageQueue: string[]
   userHasScrolled: boolean
   currentStreamingMessageId?: string
-  navigationMode: boolean // New: track if we're in navigation mode
 }
 
 // State
@@ -83,7 +83,6 @@ let chatState: ChatState = {
   messageQueue: [],
   userHasScrolled: false,
   currentStreamingMessageId: undefined,
-  navigationMode: false, // Initialize navigation mode
 }
 
 // Cached date formatter for performance
@@ -202,7 +201,6 @@ function resetChatState(): void {
     messageQueue: [],
     userHasScrolled: false,
     currentStreamingMessageId: undefined,
-    navigationMode: false,
   }
 }
 
@@ -669,24 +667,19 @@ function setupChatKeyHandler(rl: any, onExit: () => void) {
       return
     }
 
-    // Check for Shift+Right to enter navigation mode
-    if (key && key.shift && key.name === 'right' && !chatState.navigationMode) {
-      initializeNavigationMode()
+    // Handle Ctrl+Tab hint navigation (no mode needed!)
+    if (handleCtrlTabNavigation(key)) {
       return
     }
 
-    // ESC exits navigation mode
-    if (key && key.name === 'escape' && chatState.navigationMode) {
-      chatState.navigationMode = false
-      // Clear focus from all messages
-      chatState.messages.forEach((message) => {
-        if (message.subagentUIState) {
-          message.subagentUIState.focusNodeId = null
-        }
-      })
-      updateContentLines()
-      renderChat()
-      return
+    // ESC clears hint focus
+    if (key && key.name === 'escape') {
+      const hadFocus = clearAllHintFocus()
+      if (hadFocus) {
+        updateContentLines()
+        renderChat()
+        return
+      }
     }
 
     // Handle Enter - send message (always allow queuing)
@@ -702,18 +695,11 @@ function setupChatKeyHandler(rl: any, onExit: () => void) {
         }
         chatState.currentInput = ''
       }
-      // Exit navigation mode when sending a message
-      chatState.navigationMode = false
-      chatState.messages.forEach((message) => {
-        if (message.subagentUIState) {
-          message.subagentUIState.focusNodeId = null
-        }
-      })
       renderChat()
       return
     }
 
-    // Handle backspace
+    // Handle backspace for text input
     if (key && key.name === 'backspace') {
       chatState.currentInput = chatState.currentInput.slice(0, -1)
       renderChat()
@@ -839,8 +825,8 @@ async function sendMessage(message: string, addToChat: boolean = true) {
 
     // Auto-focus the latest assistant message if it has subagents
     const latestMessageId = findLatestAssistantMessageWithChildren()
-    if (latestMessageId && !chatState.navigationMode) {
-      initializeNavigationMode()
+    if (latestMessageId) {
+      autoFocusLatestHint()
     }
 
     renderChat()
@@ -1519,8 +1505,56 @@ function handleTabExpansion(): boolean {
   return false
 }
 
+function handleCtrlTabNavigation(key: any): boolean {
+  // Only handle Ctrl+Tab combinations
+  if (!key || key.name !== 'tab' || !key.ctrl) return false
+
+  const allHintNodes = getAllHintNodes()
+  if (allHintNodes.length === 0) return false
+
+  const currentFocusId = getCurrentFocusedHintNodeId()
+  let currentIndex = currentFocusId
+    ? allHintNodes.findIndex((h) => h.nodeId === currentFocusId)
+    : -1
+
+  if (key.shift) {
+    // Ctrl+Shift+Tab: backward (previous hint)
+    currentIndex =
+      currentIndex <= 0 ? allHintNodes.length - 1 : currentIndex - 1
+  } else {
+    // Ctrl+Tab: forward (next hint)
+    currentIndex =
+      currentIndex >= allHintNodes.length - 1 ? 0 : currentIndex + 1
+  }
+
+  const targetHint = allHintNodes[currentIndex]
+  if (targetHint) {
+    // Clear focus from all messages first
+    clearAllHintFocus()
+
+    // Set focus to the target hint
+    const targetMessage = chatState.messages.find(
+      (m) => m.id === targetHint.messageId,
+    )
+    if (targetMessage && targetMessage.subagentUIState) {
+      targetMessage.subagentUIState.focusNodeId = targetHint.nodeId
+    }
+
+    updateContentLines()
+    renderChat()
+    return true
+  }
+
+  return false
+}
+
 function handleSubagentNavigation(key: any): boolean {
-  if (!chatState.navigationMode) return false
+  // Only handle navigation if a hint is currently focused
+  const currentFocusId = getCurrentFocusedHintNodeId()
+  if (!currentFocusId) return false
+
+  // Don't handle navigation if user is typing - prioritize chat functionality
+  if (chatState.currentInput.length > 0) return false
 
   // Find the currently focused message
   const focusedMessage = chatState.messages.find(
@@ -1538,8 +1572,8 @@ function handleSubagentNavigation(key: any): boolean {
   const tree = focusedMessage.subagentTree
   const uiState = focusedMessage.subagentUIState
 
-  if (key.shift && key.name === 'right') {
-    // Shift+Right: Simple expansion - just expand current node and focus first child
+  if (key.name === 'return') {
+    // Enter: Expand current node and focus first child
     if (!uiState.focusNodeId) return true
 
     // Handle hint node focus - if focused on hint, expand that node
@@ -1574,21 +1608,20 @@ function handleSubagentNavigation(key: any): boolean {
     const isExpanded = uiState.expanded.has(uiState.focusNodeId)
 
     if (!isExpanded && hasChildren) {
-      // Expand the node and focus on its hint line (like the reverse of Shift+Left)
+      // Expand the node and focus on first child
       uiState.expanded.add(uiState.focusNodeId)
-      // Focus on first child
       const firstChildPath = [...path, 0]
       const firstChildNodeId = createNodeId(focusedMessage.id, firstChildPath)
       uiState.focusNodeId = firstChildNodeId
     }
-    // If already expanded or no children, do nothing (no jumping around)
+    // If already expanded or no children, do nothing
 
     updateContentLines()
     renderChat()
     return true
   }
-  if (key.shift && key.name === 'left') {
-    // Shift+Left: Toggle-style collapse - just collapse the currently focused node
+  if (key.name === 'backspace') {
+    // Backspace: Collapse current node and move to parent
     if (!uiState.focusNodeId) return true
 
     // Handle hint node focus - can't collapse a hint, so move to parent
@@ -1654,9 +1687,88 @@ function countTotalAgents(tree: SubagentNode): number {
   return count
 }
 
-function initializeNavigationMode(): void {
-  if (chatState.navigationMode) return
+function getAllHintNodes(): Array<{
+  messageId: string
+  nodeId: string
+  depth: number
+}> {
+  const hintNodes: Array<{ messageId: string; nodeId: string; depth: number }> =
+    []
 
+  chatState.messages.forEach((message) => {
+    if (
+      message.role === 'assistant' &&
+      message.subagentTree &&
+      message.subagentUIState
+    ) {
+      // Collect hint nodes from this message's tree
+      collectHintNodesFromTree(
+        message.subagentTree,
+        message.id,
+        message.subagentUIState,
+        hintNodes,
+        0,
+      )
+    }
+  })
+
+  return hintNodes
+}
+
+function collectHintNodesFromTree(
+  node: SubagentNode,
+  messageId: string,
+  uiState: SubagentUIState,
+  hintNodes: Array<{ messageId: string; nodeId: string; depth: number }>,
+  depth: number,
+  path: number[] = [],
+): void {
+  const nodeId = createNodeId(messageId, path)
+  const hasChildren = node.children && node.children.length > 0
+  const isExpanded = uiState.expanded.has(nodeId)
+
+  // If this node has children but is not expanded, it has a hint line
+  if (hasChildren && !isExpanded) {
+    const hintNodeId = nodeId + '/hint'
+    hintNodes.push({ messageId, nodeId: hintNodeId, depth })
+  }
+
+  // If expanded, recurse into children
+  if (hasChildren && isExpanded) {
+    node.children.forEach((child, index) => {
+      collectHintNodesFromTree(
+        child,
+        messageId,
+        uiState,
+        hintNodes,
+        depth + 1,
+        [...path, index],
+      )
+    })
+  }
+}
+
+function getCurrentFocusedHintNodeId(): string | null {
+  for (const message of chatState.messages) {
+    if (message.subagentUIState?.focusNodeId?.endsWith('/hint')) {
+      return message.subagentUIState.focusNodeId
+    }
+  }
+  return null
+}
+
+function clearAllHintFocus(): boolean {
+  let hadFocus = false
+  chatState.messages.forEach((message) => {
+    if (message.subagentUIState?.focusNodeId) {
+      message.subagentUIState.focusNodeId = null
+      hadFocus = true
+    }
+  })
+  return hadFocus
+}
+
+function autoFocusLatestHint(): void {
   const latestMessageId = findLatestAssistantMessageWithChildren()
   if (!latestMessageId) return
 
@@ -1672,11 +1784,9 @@ function initializeNavigationMode(): void {
     }
   }
 
-  // Always focus on the hint line when entering navigation mode
-  // This ensures the hint gets highlighted immediately
+  // Focus on the hint line to show users there are expandable items
   message.subagentUIState.focusNodeId = createNodeId(message.id, []) + '/hint'
 
-  chatState.navigationMode = true
   updateContentLines()
   renderChat()
 }
