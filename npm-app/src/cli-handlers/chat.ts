@@ -17,13 +17,14 @@ import {
 // Constants
 const SIDE_PADDING = 2
 const HEADER_TEXT = '💬 Codebuff Chat'
-const STATUS_TEXT =
-  'Shift + →/← to view agent traces • Tab to expand • ESC or Ctrl+C to exit'
+const STATUS_TEXT = 'Shift + →/← to view agent traces • ESC or Ctrl+C to exit'
 const PLACEHOLDER_TEXT = 'Type your message...'
 const WELCOME_MESSAGE =
   'Welcome to Codebuff Chat! Type your messages below and press Enter to send. This is a dedicated chat interface for conversations with your AI assistant.'
 const QUEUE_ARROW = '↑'
 const SEPARATOR_CHAR = '─'
+const PREVIEW_LINES = 5
+const MAX_LINES_PER_NODE_WHEN_COLLAPSED = 5
 
 // Subagent tree types
 export interface SubagentNode {
@@ -394,34 +395,61 @@ export function renderAssistantMessage(
   const lines: string[] = []
   const timeStr = timeFormatter.format(new Date(message.timestamp))
 
-  // Assistant messages: metadata on one line, content on next line with tree symbol
-  const metadata = `${bold(blue('Assistant'))} ${gray(`[${timeStr}]`)}`
-  lines.push(' '.repeat(metrics.sidePadding) + metadata)
+  // Check if this message has any subagents
+  const hasSubagents =
+    message.subagentTree &&
+    message.subagentTree.children &&
+    message.subagentTree.children.length > 0
+  const hasPostContent =
+    message.subagentTree && message.subagentTree.postContent
+
+  // Determine expand/collapse state for the main message
+  const isMainExpanded =
+    hasSubagents &&
+    message.subagentUIState &&
+    message.subagentUIState.expanded.size > 0
+
+  // Assistant messages: simple header without expand/collapse indicators
+  const assistantHeader = `${bold(blue('Assistant'))} ${gray(`[${timeStr}]`)}`
+  lines.push(' '.repeat(metrics.sidePadding) + assistantHeader)
 
   if (message.content && message.content.trim()) {
-    const contentLines = message.content.split('\n')
-    const hasSubagents =
-      message.subagentTree &&
-      message.subagentTree.children &&
-      message.subagentTree.children.length > 0
-    const hasPostContent =
-      message.subagentTree && message.subagentTree.postContent
-    const treePrefix = hasSubagents || hasPostContent ? '├─ ' : '└─ '
+    // Show preview or full content based on expansion state
+    const shouldShowPreview = hasSubagents && !isMainExpanded
 
-    contentLines.forEach((line) => {
-      const treeLine = treePrefix + line
-      // No highlighting for content lines - only hint lines should be highlighted
-      const prefixLength = stringWidth(treePrefix)
+    if (shouldShowPreview) {
+      // Show preview (first PREVIEW_LINES of wrapped content)
+      const contentLines = message.content.split('\n')
+      const wrappedLines: string[] = []
 
-      appendWrappedLine(
-        lines,
-        treeLine,
-        prefixLength,
-        metrics,
-        [], // No ancestors for the root content
-        0, // The root content is always at depth 0
-      )
-    })
+      for (const line of contentLines) {
+        const wrapped = wrapLine(line, metrics.contentWidth - 4) // Account for tree prefix
+        wrappedLines.push(...wrapped)
+        if (wrappedLines.length >= PREVIEW_LINES) break
+      }
+
+      // Take only first PREVIEW_LINES
+      const previewLines = wrappedLines.slice(0, PREVIEW_LINES)
+
+      previewLines.forEach((line) => {
+        const indentedLine = '    ' + line // 4 spaces for assistant content
+        appendWrappedLine(lines, indentedLine, 4, metrics, [], 0)
+      })
+
+      // Add "..." if content was truncated
+      if (wrappedLines.length > PREVIEW_LINES) {
+        const ellipsisLine = '  ' + gray('...')
+        lines.push(' '.repeat(metrics.sidePadding) + ellipsisLine)
+      }
+    } else {
+      // Show full content when expanded or no subagents
+      const contentLines = message.content.split('\n')
+
+      contentLines.forEach((line) => {
+        const indentedLine = '    ' + line // 4 spaces for assistant content
+        appendWrappedLine(lines, indentedLine, 4, metrics, [], 0)
+      })
+    }
 
     // Show hint line if there are subagents but everything is collapsed
     if (hasSubagents && message.subagentUIState) {
@@ -438,10 +466,10 @@ export function renderAssistantMessage(
         const isHintFocused = message.subagentUIState.focusNodeId === hintNodeId
 
         const hintLine = isHintFocused
-          ? `   \x1b[7m\x1b[3m${hintText}\x1b[23m\x1b[27m` // Highlighted italic text
-          : `   \x1b[3m${hintText}\x1b[23m` // Regular italic text
+          ? `    \x1b[7m\x1b[3m${hintText}\x1b[23m\x1b[27m` // Highlighted italic text
+          : `    \x1b[3m${hintText}\x1b[23m` // Regular italic text
 
-        const prefixLength = stringWidth('   ')
+        const prefixLength = stringWidth('    ')
         appendWrappedLine(lines, hintLine, prefixLength, metrics, [], 1)
       }
     }
@@ -458,26 +486,17 @@ export function renderUserMessage(
   const lines: string[] = []
   const timeStr = timeFormatter.format(new Date(message.timestamp))
 
-  // User messages: keep original format
-  const prefix = `${bold(green('You'))} ${gray(`[${timeStr}]`)}: `
-  const contentLines = message.content.split('\n')
-  contentLines.forEach((line, lineIndex) => {
-    if (lineIndex === 0) {
-      const fullLine = prefix + line
-      const wrappedLines = wrapLine(fullLine, metrics.contentWidth)
-      wrappedLines.forEach((wrappedLine) => {
-        lines.push(' '.repeat(metrics.sidePadding) + wrappedLine)
-      })
-    } else {
-      // Indent continuation lines to align with message content
-      const indentSize = stringWidth(prefix)
-      const indentedLine = ' '.repeat(indentSize) + line
-      const wrappedLines = wrapLine(indentedLine, metrics.contentWidth)
-      wrappedLines.forEach((wrappedLine) => {
-        lines.push(' '.repeat(metrics.sidePadding) + wrappedLine)
-      })
-    }
-  })
+  // User messages: structured header like assistant messages
+  const userHeader = `${bold(green('You'))} ${gray(`[${timeStr}]`)}`
+  lines.push(' '.repeat(metrics.sidePadding) + userHeader)
+
+  if (message.content && message.content.trim()) {
+    const contentLines = message.content.split('\n')
+    contentLines.forEach((line) => {
+      const indentedLine = '    ' + line // 4 spaces for user content
+      appendWrappedLine(lines, indentedLine, 4, metrics, [], 0)
+    })
+  }
 
   return lines
 }
@@ -643,13 +662,6 @@ function setupChatKeyHandler(rl: any, onExit: () => void) {
       exitChatBuffer(rl)
       onExit()
       return
-    }
-
-    // Handle Tab key for expanding collapsed trees
-    if (key && key.name === 'tab' && chatState.navigationMode) {
-      if (handleTabExpansion()) {
-        return
-      }
     }
 
     // Handle subagent navigation first
@@ -1294,55 +1306,19 @@ function appendWrappedLine(
     return
   }
 
-  // Wrap the text to get the first line, which uses the full content width.
-  const allLines = wrapLine(textToWrap, metrics.contentWidth)
-  const firstLine = allLines[0]
-  lines.push(' '.repeat(metrics.sidePadding) + firstLine)
+  // Extract the indentation prefix and the content from the text to wrap.
+  const prefix = textToWrap.substring(0, indentationLength)
+  const content = textToWrap.substring(indentationLength)
 
-  // If there are subsequent lines, they need to be re-wrapped with indentation.
-  if (allLines.length > 1) {
-    const remainingText = allLines.slice(1).join(' ')
-    const continuationWidth = Math.max(
-      10,
-      metrics.contentWidth - indentationLength,
-    )
+  // The width available for the content is the total content width minus the prefix length.
+  const availableWidth = Math.max(10, metrics.contentWidth - indentationLength)
 
-    // Build the continuation prefix that maintains tree structure
-    let continuationPrefix = ''
-    for (let i = 0; i < depth; i++) {
-      if (i < ancestorLines.length && ancestorLines[i]) {
-        continuationPrefix += '│   ' // Vertical line for continuing ancestors
-      } else {
-        continuationPrefix += '    ' // Empty space for finished ancestors
-      }
-    }
-    // Add spacing to align with the content after the tree prefix
-    const spacingNeeded = Math.max(
-      0,
-      indentationLength - continuationPrefix.length,
-    )
-    continuationPrefix += ' '.repeat(spacingNeeded)
+  // Wrap only the content part.
+  const wrappedContentLines = wrapLine(content, availableWidth)
 
-    const totalIndentation =
-      ' '.repeat(metrics.sidePadding) + continuationPrefix
-
-    // Re-wrap the rest of the text with the narrower width.
-    const continuationLines = wrapLine(remainingText, continuationWidth)
-    for (const line of continuationLines) {
-      const finalLine = totalIndentation + line
-      // Ensure we don't exceed terminal width
-      if (finalLine.length <= metrics.width) {
-        lines.push(finalLine)
-      } else {
-        // If even with indentation we exceed width, truncate gracefully
-        const truncatedContent =
-          line.substring(
-            0,
-            Math.max(1, metrics.width - totalIndentation.length - 3),
-          ) + '...'
-        lines.push(totalIndentation + truncatedContent)
-      }
-    }
+  // Add each wrapped line to the output, prepending the side padding and the original prefix.
+  for (const line of wrappedContentLines) {
+    lines.push(' '.repeat(metrics.sidePadding) + prefix + line)
   }
 }
 
@@ -1358,161 +1334,122 @@ export function renderSubagentTree(
     node: SubagentNode,
     depth: number,
     path: number[] = [],
-    isLastChild: boolean = false,
-    ancestorLines: boolean[] = [],
   ): void {
     const nodeId = createNodeId(messageId, path)
     const hasChildren = node.children && node.children.length > 0
     const isExpanded = uiState.expanded.has(nodeId)
-    const isFocused = uiState.focusNodeId === nodeId
 
-    // Build tree prefix with proper vertical connectors for hierarchical structure
-    let treePrefix = ''
+    // Progressive indentation: 4 spaces per level
+    const agentName = node.type
+      ? node.type.charAt(0).toUpperCase() + node.type.slice(1)
+      : 'Agent'
 
-    // Add vertical lines and spaces for ancestor levels
-    for (let i = 0; i < depth; i++) {
-      if (i < ancestorLines.length && ancestorLines[i]) {
-        treePrefix += '│   ' // Vertical line for continuing ancestors
-      } else {
-        treePrefix += '    ' // Empty space for finished ancestors
-      }
-    }
+    const now = new Date()
+    const timeStr = timeFormatter.format(now)
 
-    // Add connector for current level
-    treePrefix += isLastChild ? '└─ ' : '├─ '
+    const expandCollapseIndicator = hasChildren
+      ? isExpanded
+        ? '[-]'
+        : '[+]'
+      : ''
 
-    // Create type label
-    const typeLabel = node.type ? `[${node.type}] ` : ''
-    const firstLine = node.content.split('\n')[0] || '(empty)'
+    // Agent header - 4 spaces per depth level from left margin (including side padding)
+    const headerIndentSpaces = 4 * depth
+    const agentHeader = expandCollapseIndicator
+      ? `${expandCollapseIndicator} ${bold(blue(agentName))} ${gray(`[${timeStr}]`)}`
+      : `${bold(blue(agentName))} ${gray(`[${timeStr}]`)}`
 
-    // Build header line with proper tree structure
-    const header = `${treePrefix}${typeLabel}${firstLine}`
-
-    // No highlighting for content lines - only hint lines should be highlighted
-    const highlightedHeader = header
-
-    // Wrap the line properly with side padding and maintain indentation for wrapped lines
-    const prefixLength = stringWidth(treePrefix + typeLabel)
+    const headerPrefix = ' '.repeat(headerIndentSpaces)
     appendWrappedLine(
       lines,
-      highlightedHeader,
-      prefixLength,
+      headerPrefix + agentHeader,
+      stringWidth(headerPrefix),
       metrics,
-      ancestorLines,
-      depth,
     )
+
+    // Content - 4 additional spaces beyond header indentation
+    if (node.content) {
+      const contentLines = node.content.split('\n')
+      const contentIndentSpaces = headerIndentSpaces + 4
+      const contentPrefix = ' '.repeat(contentIndentSpaces)
+      contentLines.forEach((line) => {
+        if (line.trim()) {
+          appendWrappedLine(
+            lines,
+            contentPrefix + line,
+            stringWidth(contentPrefix),
+            metrics,
+          )
+        }
+      })
+    }
 
     // Render children if expanded
     if (hasChildren && isExpanded) {
       node.children.forEach((child, index) => {
-        const isChildLastChild = index === node.children.length - 1
-        // Build new ancestor lines array: ensure it's exactly depth+1 long
-        const newAncestorLines = [...ancestorLines]
-        // Pad array to correct length if needed
-        while (newAncestorLines.length <= depth) {
-          newAncestorLines.push(false)
-        }
-        // Set current depth: true if this node will have more siblings
-        newAncestorLines[depth] = !isLastChild
-
-        renderNode(
-          child,
-          depth + 1,
-          [...path, index],
-          isChildLastChild,
-          newAncestorLines,
-        )
+        renderNode(child, depth + 1, [...path, index])
       })
     } else if (hasChildren && !isExpanded) {
-      // Show hint line if there are children but they're collapsed
+      // Show hint line
       const childAgentCount = countTotalAgents(node)
       const hintText = `+ ${childAgentCount} agent response${childAgentCount === 1 ? '' : 's'}`
 
-      // Check if the hint line for this node is focused
       const hintNodeId = nodeId + '/hint'
       const isHintFocused = uiState.focusNodeId === hintNodeId
 
-      // Build prefix for hint - appears as child of this node
-      let hintPrefix = ''
-      for (let i = 0; i < depth; i++) {
-        if (i < ancestorLines.length && ancestorLines[i]) {
-          hintPrefix += '│   ' // Vertical line for continuing ancestors
-        } else {
-          hintPrefix += '    ' // Empty space for finished ancestors
-        }
-      }
-      hintPrefix += '    ' // Extra indentation for hint
-
       const hintLine = isHintFocused
-        ? `${hintPrefix}\x1b[7m\x1b[3m${hintText}\x1b[23m\x1b[27m` // Highlighted italic text
-        : `${hintPrefix}\x1b[3m${hintText}\x1b[23m` // Regular italic text
+        ? `\x1b[7m\x1b[3m${hintText}\x1b[23m\x1b[27m`
+        : `\x1b[3m${hintText}\x1b[23m`
 
-      const prefixLength = stringWidth(hintPrefix)
+      const hintIndentSpaces = 4 * depth + 4 // Same as content indentation
+      const hintPrefix = ' '.repeat(hintIndentSpaces)
       appendWrappedLine(
         lines,
-        hintLine,
-        prefixLength,
+        hintPrefix + hintLine,
+        stringWidth(hintPrefix),
         metrics,
-        ancestorLines,
-        depth + 1,
       )
     }
 
-    // Render postContent after children (if it has any)
+    // Render postContent
     if (node.postContent) {
       const postLines = node.postContent.split('\n')
+      const postIndentSpaces = 4 * depth + 4 // Same as content indentation
+      const postPrefix = ' '.repeat(postIndentSpaces)
       postLines.forEach((line) => {
         if (line.trim()) {
-          // Build prefix for postContent - appears as final child of this node
-          let postPrefix = ''
-          for (let i = 0; i < depth; i++) {
-            if (i < ancestorLines.length && ancestorLines[i]) {
-              postPrefix += '│   '
-            } else {
-              postPrefix += '    '
-            }
-          }
-          if (depth > 0) {
-            postPrefix += '└─ ' // PostContent is always the last item
-          }
-
-          // No highlighting for postContent lines - only hint lines should be highlighted
-          const postLine = `${postPrefix}${line}`
-          const prefixLength = stringWidth(postPrefix)
           appendWrappedLine(
             lines,
-            postLine,
-            prefixLength,
+            postPrefix + bold(green(line)),
+            stringWidth(postPrefix),
             metrics,
-            ancestorLines,
-            depth,
           )
         }
       })
     }
   }
 
-  // Render children (or hint) only if the tree is not fully collapsed
+  // Render children only if the tree is not fully collapsed
   if (uiState.expanded.size > 0) {
     if (tree.children && tree.children.length > 0) {
-      // Render each top-level child starting from depth 1
       tree.children.forEach((child, index) => {
-        // A child is only the "last child" if it's the last AND there's no postContent coming after
-        const isLastChild =
-          index === tree.children.length - 1 && !tree.postContent
-        renderNode(child, 1, [index], isLastChild, [true])
+        renderNode(child, 1, [index])
       })
     }
   }
 
-  // Always render the parent's postContent if it exists, after all children
+  // Always render the parent's postContent if it exists
   if (tree.postContent) {
     const postLines = tree.postContent.split('\n')
+    const postPrefix = '    '
     postLines.forEach((line) => {
       if (line.trim()) {
-        const postLine = `└─ ${line}` // Simple connector for parent postContent
-        const prefixLength = stringWidth('└─ ')
-        appendWrappedLine(lines, postLine, prefixLength, metrics, [], 0)
+        appendWrappedLine(
+          lines,
+          postPrefix + bold(green(line)),
+          stringWidth(postPrefix),
+          metrics,
+        )
       }
     })
   }
