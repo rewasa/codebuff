@@ -16,7 +16,34 @@ import {
 // Constants
 const SIDE_PADDING = 2
 const HEADER_TEXT = '💬 Codebuff Chat'
-const STATUS_TEXT = 'Tab to navigate • Space/Enter to toggle • ESC to exit'
+// Dynamic status text that adapts to terminal width
+function getStatusText(metrics: TerminalMetrics): string {
+  const availableWidth = metrics.contentWidth
+
+  // Full status text
+  const fullText =
+    'Tab/Shift+Tab: navigate • Space/Enter: toggle • ←/→: prev/next • ESC: exit'
+
+  // Medium status text
+  const mediumText =
+    'Tab: navigate • Space: toggle • ←/→: prev/next • ESC: exit'
+
+  // Short status text
+  const shortText = 'Tab: nav • Space: toggle • ESC: exit'
+
+  // Minimal status text
+  const minimalText = 'ESC: exit'
+
+  if (availableWidth >= fullText.length) {
+    return fullText
+  } else if (availableWidth >= mediumText.length) {
+    return mediumText
+  } else if (availableWidth >= shortText.length) {
+    return shortText
+  } else {
+    return minimalText
+  }
+}
 const PLACEHOLDER_TEXT = 'Type your message...'
 const WELCOME_MESSAGE =
   'Welcome to Codebuff Chat! Type your messages below and press Enter to send. This is a dedicated chat interface for conversations with your AI assistant.'
@@ -83,6 +110,7 @@ interface ChatState {
   messageQueue: string[]
   userHasScrolled: boolean
   currentStreamingMessageId?: string
+  currentlyStreamingNodeId?: string
   inputBarFocused: boolean
 }
 
@@ -98,6 +126,7 @@ let chatState: ChatState = {
   messageQueue: [],
   userHasScrolled: false,
   currentStreamingMessageId: undefined,
+  currentlyStreamingNodeId: undefined,
   inputBarFocused: true, // Start with input bar focused
 }
 
@@ -217,6 +246,7 @@ function resetChatState(): void {
     messageQueue: [],
     userHasScrolled: false,
     currentStreamingMessageId: undefined,
+    currentlyStreamingNodeId: undefined,
     inputBarFocused: true, // Start with input bar focused
   }
 }
@@ -397,6 +427,7 @@ function finishStreamingMessage(messageId: string): void {
   if (chatState.currentStreamingMessageId === messageId) {
     chatState.currentStreamingMessageId = undefined
   }
+  chatState.currentlyStreamingNodeId = undefined
 
   // Collapse all subagent tree nodes when streaming finishes
   if (message.subagentUIState) {
@@ -459,7 +490,12 @@ export function renderAssistantMessage(
       message.subagentTree && message.subagentTree.postContent
     const shouldShowOnlyPostContent = isFullyCollapsed && hasPostContentToShow
 
-    if (!shouldShowOnlyPostContent) {
+    // Hide parent content when a child is processing in THIS message
+    const isProcessingChildren =
+      chatState.currentlyStreamingNodeId?.includes('/') &&
+      chatState.currentStreamingMessageId === message.id
+
+    if (!shouldShowOnlyPostContent && !isProcessingChildren) {
       // Show preview or full content based on expansion state
       const shouldShowPreview = hasSubagents && !isMainExpanded
 
@@ -675,7 +711,8 @@ function renderChat() {
   }
 
   // Status line with side padding - position at very bottom of screen
-  const statusContent = ' '.repeat(metrics.sidePadding) + gray(STATUS_TEXT)
+  const statusText = getStatusText(metrics)
+  const statusContent = ' '.repeat(metrics.sidePadding) + gray(statusText)
   screenLines.push(padLine(statusContent, metrics.width))
 
   // Write the entire screen content at once
@@ -727,6 +764,11 @@ function setupChatKeyHandler(rl: any, onExit: () => void) {
 
     // Handle Space/Enter for toggle
     if (handleToggleAction(key)) {
+      return
+    }
+
+    // Handle left/right arrows for toggle open/close
+    if (handleArrowToggleAction(key)) {
       return
     }
 
@@ -906,6 +948,11 @@ async function streamTextToNodeProperty(
   text: string,
 ): Promise<void> {
   if (!text) return
+
+  // Track which node is currently streaming
+  if (property === 'content') {
+    chatState.currentlyStreamingNodeId = node.id
+  }
 
   // If streaming postContent, automatically collapse this node to hide previous content
   if (property === 'postContent') {
@@ -1404,7 +1451,8 @@ export function renderSubagentTree(
     path: number[] = [],
   ): void {
     const nodeId = createNodeId(messageId, path)
-    const hasChildren = (node.children && node.children.length > 0) || !!node.postContent
+    const hasChildren =
+      (node.children && node.children.length > 0) || !!node.postContent
     const isExpanded = uiState.expanded.has(nodeId)
 
     // Progressive indentation: 4 spaces per level
@@ -1447,7 +1495,12 @@ export function renderSubagentTree(
 
     // Content - 4 additional spaces beyond header indentation
     // Only show content if expanded or has no children
-    if (node.content && (isExpanded || !hasChildren)) {
+    // Also hide content if one of this node's descendants is currently processing in THIS message
+    const isProcessingChildren =
+      chatState.currentlyStreamingNodeId?.startsWith(nodeId + '/') &&
+      chatState.currentStreamingMessageId === messageId
+
+    if (node.content && (isExpanded || !hasChildren) && !isProcessingChildren) {
       const contentLines = node.content.split('\n')
       const contentIndentSpaces = headerIndentSpaces + 4
       const contentPrefix = ' '.repeat(contentIndentSpaces)
@@ -1486,7 +1539,6 @@ export function renderSubagentTree(
         }
       })
     }
-
   }
 
   // Render children only if the tree is not fully collapsed
@@ -1639,6 +1691,72 @@ function handleToggleAction(key: any): boolean {
   return false
 }
 
+function handleArrowToggleAction(key: any): boolean {
+  // Handle left/right arrows for toggle actions
+  if (!key || (key.name !== 'left' && key.name !== 'right')) return false
+
+  // Only handle if a toggle is currently focused
+  const currentFocusId = getCurrentFocusedToggleNodeId()
+  if (!currentFocusId) return false
+
+  // Don't handle if input bar is focused - prioritize chat functionality
+  if (chatState.inputBarFocused) return false
+
+  // Find the currently focused message
+  const focusedMessage = chatState.messages.find(
+    (m) => m.subagentUIState?.focusNodeId,
+  )
+
+  if (
+    !focusedMessage ||
+    !focusedMessage.subagentTree ||
+    !focusedMessage.subagentUIState
+  ) {
+    return false
+  }
+
+  const uiState = focusedMessage.subagentUIState
+
+  // Handle toggle node focus - if focused on toggle, open/close that node
+  if (uiState.focusNodeId && uiState.focusNodeId.endsWith('/toggle')) {
+    const actualNodeId = uiState.focusNodeId.slice(0, -7) // Remove '/toggle'
+    const isExpanded = uiState.expanded.has(actualNodeId)
+
+    if (key.name === 'left') {
+      // Left arrow: close (collapse) if expanded, otherwise navigate to previous toggle
+      if (isExpanded) {
+        uiState.expanded.delete(actualNodeId)
+        // Remove all descendant nodes from expanded set
+        const descendantPrefix = actualNodeId + '/'
+        uiState.expanded.forEach((nodeId) => {
+          if (nodeId.startsWith(descendantPrefix)) {
+            uiState.expanded.delete(nodeId)
+          }
+        })
+        updateContentLines()
+        renderChat()
+      } else {
+        // Already closed, navigate to previous toggle (like Shift+Tab)
+        return handleTabNavigation({ name: 'tab', shift: true })
+      }
+    } else if (key.name === 'right') {
+      // Right arrow: open (expand) if closed, otherwise navigate to next toggle
+      if (!isExpanded) {
+        uiState.expanded.add(actualNodeId)
+        updateContentLines()
+        renderChat()
+      } else {
+        // Already open, navigate to next toggle (like Tab)
+        return handleTabNavigation({ name: 'tab', shift: false })
+      }
+    }
+
+    return true
+  }
+
+  return false
+}
+
 // Helper function to count total agents in a tree
 function countTotalAgents(tree: SubagentNode): number {
   if (!tree.children || tree.children.length === 0) return 0
@@ -1738,7 +1856,8 @@ function collectToggleNodesFromTree(
     node.children.forEach((child, index) => {
       const childPath = [...path, index]
       const childNodeId = createNodeId(messageId, childPath)
-      const childHasChildren = (child.children && child.children.length > 0) || !!child.postContent
+      const childHasChildren =
+        (child.children && child.children.length > 0) || !!child.postContent
 
       // Only add toggle if this child has children AND this node is currently expanded (making child visible)
       const nodeId = createNodeId(messageId, path)

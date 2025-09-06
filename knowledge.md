@@ -62,6 +62,7 @@ Codebuff is a tool for editing codebases via natural language instruction to Buf
 - Use `Ctrl+Tab/Ctrl+Shift+Tab` for hint navigation - works reliably everywhere and avoids conflicts with normal Tab behavior
 - Use `Enter` to send messages or expand nodes (context-aware) - prioritizes chat functionality
 - Use `Backspace` to delete characters or collapse nodes (context-aware) - prioritizes chat functionality
+- Use `Left/Right arrows` for toggle control when a toggle is selected - left arrow closes (or moves to previous toggle if already closed), right arrow opens (or moves to next toggle if already open)
 - `Ctrl+Up/Down` is unreliable on macOS
 - `Shift+Arrow` combinations have mixed compatibility
 - Emacs/readline shortcuts (`Ctrl+A`, `Ctrl+E`, etc.) are the most reliable cross-platform
