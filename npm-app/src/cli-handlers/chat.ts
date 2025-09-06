@@ -596,11 +596,13 @@ function updateContentLines() {
   chatState.contentLines = lines
 }
 
-function renderChat() {
-  // Clear screen and move cursor to top
-  process.stdout.write(CLEAR_SCREEN)
-  process.stdout.write(MOVE_CURSOR(1, 1))
+function padLine(line: string, width: number): string {
+  const visibleWidth = stringWidth(line)
+  const padding = Math.max(0, width - visibleWidth)
+  return line + ' '.repeat(padding)
+}
 
+function renderChat() {
   const metrics = getTerminalMetrics()
   const inputAreaHeight = calculateInputAreaHeight(metrics)
   const maxContentLines = computeMaxContentLines(metrics)
@@ -616,14 +618,22 @@ function renderChat() {
     // Don't reset userHasScrolled flag here - let user keep control
   }
 
+  // Build the complete screen content
+  const screenLines: string[] = []
+
   // Display chat content
   const visibleLines = chatState.contentLines.slice(
     chatState.scrollOffset,
     chatState.scrollOffset + maxContentLines,
   )
-  process.stdout.write(visibleLines.join('\n'))
 
-  // Position input area and status at bottom of terminal
+  // Pad visible lines to fill the available content area
+  for (let i = 0; i < maxContentLines; i++) {
+    const line = visibleLines[i] || ''
+    screenLines.push(padLine(line, metrics.width))
+  }
+
+  // Add input area lines
   let currentLine = metrics.height - inputAreaHeight
 
   // Display queued message preview if there are queued messages
@@ -639,26 +649,24 @@ function renderChat() {
       queueCount,
       metrics,
     )
-
-    process.stdout.write(MOVE_CURSOR(currentLine, 1))
-    process.stdout.write(' '.repeat(metrics.sidePadding) + gray(previewText))
+    const queueLine = ' '.repeat(metrics.sidePadding) + gray(previewText)
+    screenLines.push(padLine(queueLine, metrics.width))
     currentLine++
   }
 
   // Display separator line
-  process.stdout.write(MOVE_CURSOR(currentLine, 1))
-  process.stdout.write(
+  const separatorContent =
     ' '.repeat(metrics.sidePadding) +
-      gray(SEPARATOR_CHAR.repeat(metrics.contentWidth)),
-  )
+    gray(SEPARATOR_CHAR.repeat(metrics.contentWidth))
+  screenLines.push(padLine(separatorContent, metrics.width))
   currentLine++
 
   // Show placeholder or user input
   if (chatState.currentInput.length === 0) {
     // Show placeholder text
     const placeholder = `\x1b[2m${gray(PLACEHOLDER_TEXT)}\x1b[22m`
-    process.stdout.write(MOVE_CURSOR(currentLine, 1))
-    process.stdout.write(' '.repeat(metrics.sidePadding) + placeholder)
+    const placeholderContent = ' '.repeat(metrics.sidePadding) + placeholder
+    screenLines.push(padLine(placeholderContent, metrics.width))
     currentLine++
   } else {
     // Show user input
@@ -668,15 +676,23 @@ function renderChat() {
     )
 
     wrappedInputLines.forEach((line, index) => {
-      process.stdout.write(MOVE_CURSOR(currentLine, 1))
-      process.stdout.write(' '.repeat(metrics.sidePadding) + line)
+      const inputContent = ' '.repeat(metrics.sidePadding) + line
+      screenLines.push(padLine(inputContent, metrics.width))
       currentLine++
     })
   }
 
+  // Pad remaining input area with empty lines, leaving one for the status bar
+  while (screenLines.length < metrics.height - 1) {
+    screenLines.push(' '.repeat(metrics.width))
+  }
+
   // Status line with side padding - position at very bottom of screen
-  process.stdout.write(MOVE_CURSOR(metrics.height, 1))
-  process.stdout.write(' '.repeat(metrics.sidePadding) + gray(STATUS_TEXT))
+  const statusContent = ' '.repeat(metrics.sidePadding) + gray(STATUS_TEXT)
+  screenLines.push(padLine(statusContent, metrics.width))
+
+  // Write the entire screen content at once
+  process.stdout.write(MOVE_CURSOR(1, 1) + screenLines.join('\n'))
 
   // Position the real cursor at input location
   positionRealCursor()
@@ -875,13 +891,6 @@ async function sendMessage(message: string, addToChat: boolean = true) {
     )
   } finally {
     chatState.isWaitingForResponse = false
-
-    // Auto-focus the latest assistant message if it has subagents
-    const latestMessageId = findLatestAssistantMessageWithChildren()
-    if (latestMessageId) {
-      autoFocusLatestToggle()
-    }
-
     renderChat()
 
     // Process queued messages
