@@ -25,6 +25,22 @@ const QUEUE_ARROW = '↑'
 const SEPARATOR_CHAR = '─'
 const PREVIEW_LINES = 5
 const MAX_LINES_PER_NODE_WHEN_COLLAPSED = 5
+const INPUT_BAR_NODE_ID = 'input-bar'
+
+// Response structure interface
+export interface ResponseChild {
+  content: string
+  postContent: string
+  agent: string
+  children: ResponseChild[]
+}
+
+export interface AssistantResponse {
+  content: string
+  postContent: string
+  agent: string
+  children: ResponseChild[]
+}
 
 // Subagent tree types
 export interface SubagentNode {
@@ -68,6 +84,7 @@ interface ChatState {
   messageQueue: string[]
   userHasScrolled: boolean
   currentStreamingMessageId?: string
+  inputBarFocused: boolean
 }
 
 // State
@@ -82,6 +99,7 @@ let chatState: ChatState = {
   messageQueue: [],
   userHasScrolled: false,
   currentStreamingMessageId: undefined,
+  inputBarFocused: true, // Start with input bar focused
 }
 
 // Cached date formatter for performance
@@ -200,15 +218,19 @@ function resetChatState(): void {
     messageQueue: [],
     userHasScrolled: false,
     currentStreamingMessageId: undefined,
+    inputBarFocused: true, // Start with input bar focused
   }
 }
 
 function setupRealCursor(): void {
-  // Hide cursor using invisible block style
-  process.stdout.write(CURSOR_SET_INVISIBLE_BLOCK)
-
-  // Disable cursor blinking for better invisibility
-  process.stdout.write(DISABLE_CURSOR_BLINK)
+  if (chatState.inputBarFocused) {
+    // Show cursor when input bar is focused
+    process.stdout.write(SET_CURSOR_DEFAULT)
+  } else {
+    // Hide cursor when navigating toggles
+    process.stdout.write(CURSOR_SET_INVISIBLE_BLOCK)
+    process.stdout.write(DISABLE_CURSOR_BLINK)
+  }
 }
 
 function restoreDefaultRealCursor(): void {
@@ -217,8 +239,12 @@ function restoreDefaultRealCursor(): void {
 }
 
 function positionRealCursor(): void {
+  // Only position cursor if input bar is focused
+  if (!chatState.inputBarFocused) {
+    return
+  }
+
   // Position cursor at the input area where typing occurs
-  // Cursor hiding is handled separately in setupRealCursor()
   const metrics = getTerminalMetrics()
   const inputAreaHeight = calculateInputAreaHeight(metrics)
 
@@ -425,57 +451,65 @@ export function renderAssistantMessage(
   lines.push(' '.repeat(metrics.sidePadding) + assistantHeader)
 
   if (message.content && message.content.trim()) {
-    // Show preview or full content based on expansion state
-    const shouldShowPreview = hasSubagents && !isMainExpanded
+    // Check if we should show only postContent (when collapsed and has postContent)
+    const isFullyCollapsed =
+      hasSubagents &&
+      message.subagentUIState &&
+      message.subagentUIState.expanded.size === 0
+    const hasPostContentToShow =
+      message.subagentTree && message.subagentTree.postContent
+    const shouldShowOnlyPostContent = isFullyCollapsed && hasPostContentToShow
 
-    if (shouldShowPreview) {
-      // Show preview (first PREVIEW_LINES of wrapped content)
-      const contentLines = message.content.split('\n')
-      const wrappedLines: string[] = []
-
-      for (const line of contentLines) {
-        const wrapped = wrapLine(line, metrics.contentWidth - 4) // Account for tree prefix
-        wrappedLines.push(...wrapped)
-        if (wrappedLines.length >= PREVIEW_LINES) break
-      }
-
-      // Take only first PREVIEW_LINES
-      const previewLines = wrappedLines.slice(0, PREVIEW_LINES)
-
-      previewLines.forEach((line) => {
-        const indentedLine = '    ' + line // 4 spaces for assistant content
-        appendWrappedLine(lines, indentedLine, 4, metrics, [], 0)
+    if (shouldShowOnlyPostContent) {
+      // Show only postContent when collapsed
+      const postLines = message.subagentTree!.postContent!.split('\n')
+      const postPrefix = '    '
+      postLines.forEach((line) => {
+        if (line.trim()) {
+          appendWrappedLine(
+            lines,
+            postPrefix + bold(green(line)),
+            stringWidth(postPrefix),
+            metrics,
+          )
+        }
       })
-
-      // Add "..." if content was truncated
-      if (wrappedLines.length > PREVIEW_LINES) {
-        const ellipsisLine = '  ' + gray('...')
-        lines.push(' '.repeat(metrics.sidePadding) + ellipsisLine)
-      }
     } else {
-      // Show full content when expanded or no subagents
-      const contentLines = message.content.split('\n')
+      // Show preview or full content based on expansion state
+      const shouldShowPreview = hasSubagents && !isMainExpanded
 
-      contentLines.forEach((line) => {
-        const indentedLine = '    ' + line // 4 spaces for assistant content
-        appendWrappedLine(lines, indentedLine, 4, metrics, [], 0)
-      })
-    }
+      if (shouldShowPreview) {
+        // Show preview (first PREVIEW_LINES of wrapped content)
+        const contentLines = message.content.split('\n')
+        const wrappedLines: string[] = []
 
-    // Show hint line if there are subagents but everything is collapsed
-    if (hasSubagents && message.subagentUIState) {
-      const isFullyCollapsed = message.subagentUIState.expanded.size === 0
-      if (isFullyCollapsed) {
-        // Count total agent responses recursively
-        const agentCount = message.subagentTree
-          ? countTotalAgents(message.subagentTree)
-          : 0
-        const hintText = `${agentCount} agent response${agentCount === 1 ? '' : 's'}`
+        for (const line of contentLines) {
+          const wrapped = wrapLine(line, metrics.contentWidth - 4) // Account for tree prefix
+          wrappedLines.push(...wrapped)
+          if (wrappedLines.length >= PREVIEW_LINES) break
+        }
 
-        const hintLine = `    \x1b[3m${hintText}\x1b[23m` // Regular italic text
+        // Take only first PREVIEW_LINES
+        const previewLines = wrappedLines.slice(0, PREVIEW_LINES)
 
-        const prefixLength = stringWidth('    ')
-        appendWrappedLine(lines, hintLine, prefixLength, metrics, [], 1)
+        previewLines.forEach((line) => {
+          const indentedLine = '    ' + line // 4 spaces for assistant content
+          appendWrappedLine(lines, indentedLine, 4, metrics, [], 0)
+        })
+
+        // Add "..." if content was truncated
+        if (wrappedLines.length > PREVIEW_LINES) {
+          const ellipsisLine = '  ' + gray('...')
+          lines.push(' '.repeat(metrics.sidePadding) + ellipsisLine)
+        }
+      } else {
+        // Show full content when expanded or no subagents
+        const contentLines = message.content.split('\n')
+
+        contentLines.forEach((line) => {
+          const indentedLine = '    ' + line // 4 spaces for assistant content
+          appendWrappedLine(lines, indentedLine, 4, metrics, [], 0)
+        })
       }
     }
   }
@@ -661,8 +695,11 @@ function setupChatKeyHandler(rl: any, onExit: () => void) {
   process.stdin.on('keypress', (str: string, key: any) => {
     // Handle ESC - clear focus first, or exit if no focus
     if (key && key.name === 'escape') {
-      const hadFocus = clearAllToggleFocus()
+      const hadFocus = clearAllFocus()
       if (hadFocus) {
+        // Focus input bar when clearing other focus
+        chatState.inputBarFocused = true
+        setupRealCursor()
         updateContentLines()
         renderChat()
         return
@@ -691,11 +728,9 @@ function setupChatKeyHandler(rl: any, onExit: () => void) {
       return
     }
 
-    // Handle Enter - send message (always allow queuing) only if no toggle is focused
+    // Handle Enter - send message only if input bar is focused
     if (key && key.name === 'return') {
-      const currentFocusId = getCurrentFocusedToggleNodeId()
-      // Only send message if no toggle is focused or user has typed something
-      if (!currentFocusId || chatState.currentInput.length > 0) {
+      if (chatState.inputBarFocused) {
         const message = chatState.currentInput.trim()
         if (message) {
           if (chatState.isWaitingForResponse) {
@@ -710,13 +745,16 @@ function setupChatKeyHandler(rl: any, onExit: () => void) {
         renderChat()
         return
       }
+      // If not input focused, let handleToggleAction handle it
     }
 
-    // Handle backspace for text input
+    // Handle backspace for text input only if input bar is focused
     if (key && key.name === 'backspace') {
-      chatState.currentInput = chatState.currentInput.slice(0, -1)
-      renderChat()
-      return
+      if (chatState.inputBarFocused) {
+        chatState.currentInput = chatState.currentInput.slice(0, -1)
+        renderChat()
+        return
+      }
     }
 
     // Handle scrolling
@@ -792,14 +830,13 @@ function setupChatKeyHandler(rl: any, onExit: () => void) {
       return
     }
 
-    // Add printable characters to input (except space when toggle is focused)
+    // Add printable characters to input only if input bar is focused
     if (str && str.length === 1 && str.charCodeAt(0) >= 32) {
-      // Don't add space to input if a toggle is focused
-      if (str === ' ' && getCurrentFocusedToggleNodeId()) {
-        return
+      if (chatState.inputBarFocused) {
+        chatState.currentInput += str
+        renderChat()
       }
-      chatState.currentInput += str
-      renderChat()
+      // Ignore input when toggles are focused
     }
   })
 
@@ -874,6 +911,28 @@ async function streamTextToNodeProperty(
   text: string,
 ): Promise<void> {
   if (!text) return
+
+  // If streaming postContent, automatically collapse this node to hide previous content
+  if (property === 'postContent') {
+    // Find the message that contains this node and collapse it
+    const currentStreamingMessage = chatState.messages.find(
+      (m) => m.id === chatState.currentStreamingMessageId,
+    )
+    if (currentStreamingMessage && currentStreamingMessage.subagentUIState) {
+      const uiState = currentStreamingMessage.subagentUIState
+
+      // Collapse this specific node
+      uiState.expanded.delete(node.id)
+
+      // Also collapse any child nodes of this node
+      const childPrefix = node.id + '/'
+      uiState.expanded.forEach((nodeId) => {
+        if (nodeId.startsWith(childPrefix)) {
+          uiState.expanded.delete(nodeId)
+        }
+      })
+    }
+  }
 
   const words = text.split(' ')
   for (let i = 0; i < words.length; i++) {
@@ -995,7 +1054,7 @@ async function simulateStreamingResponse(
   onChunk: (chunk: string) => void,
 ): Promise<void> {
   // Generate a response based on the message - show realistic subagent interactions with internal monologues
-  const responses = [
+  const responses: AssistantResponse[] = [
     {
       content: `I'll help you fix that issue. Let me find the relevant files first.`,
       agent: 'assistant',
@@ -1009,6 +1068,7 @@ async function simulateStreamingResponse(
             {
               content: `Hmm, I need to be strategic about which files to examine. Let me check the most recently modified ones first, then look at the core logic files...`,
               agent: 'file-picker',
+              postContent: `Analysis complete - prioritizing recently modified auth files for detailed review`,
               children: [],
             },
           ],
@@ -1021,6 +1081,7 @@ async function simulateStreamingResponse(
             {
               content: `The error handling looks solid, but I should double-check the edge cases. What happens if the API returns unexpected data?`,
               agent: 'reviewer',
+              postContent: `Edge case analysis complete - error handling is robust and handles all scenarios properly`,
               children: [],
             },
           ],
@@ -1035,6 +1096,7 @@ async function simulateStreamingResponse(
         {
           content: `@file-picker: I need to understand the current architecture before making changes`,
           agent: 'system',
+          postContent: `Architectural analysis complete - ready to proceed with changes`,
           children: [
             {
               content: `Let me map out the component hierarchy first. Looking at imports and exports to understand dependencies...`,
@@ -1044,6 +1106,7 @@ async function simulateStreamingResponse(
                 {
                   content: `I notice this component is used in 12 different places. I need to ensure my changes don't break existing functionality...`,
                   agent: 'file-picker',
+                  postContent: `Dependency analysis complete - identified safe refactoring points with minimal impact`,
                   children: [],
                 },
               ],
@@ -1058,6 +1121,7 @@ async function simulateStreamingResponse(
             {
               content: `Tests look good, but let me also check the integration tests to make sure the new feature plays well with the existing system...`,
               agent: 'system',
+              postContent: `Integration tests pass - new feature integrates seamlessly with existing system`,
               children: [],
             },
           ],
@@ -1077,6 +1141,7 @@ async function simulateStreamingResponse(
             {
               content: `Interesting, these files all share the same async pattern. I bet the issue is in how we're handling Promise rejections...`,
               agent: 'file-picker',
+              postContent: `Pattern analysis complete - confirmed Promise rejection handling issue across multiple files`,
               children: [],
             },
           ],
@@ -1089,6 +1154,7 @@ async function simulateStreamingResponse(
             {
               content: `The issue is subtle - we're assuming the session is valid, but if it expires mid-request, the user object becomes null. Classic race condition.`,
               agent: 'thinker',
+              postContent: `Root cause confirmed - implemented session validation fix to prevent race condition`,
               children: [],
             },
           ],
@@ -1103,6 +1169,7 @@ async function simulateStreamingResponse(
         {
           content: `@reviewer: Let me analyze the current code structure and identify refactoring opportunities`,
           agent: 'system',
+          postContent: `Code structure analysis complete - refactoring opportunities identified`,
           children: [
             {
               content: `This component is doing too much - 247 lines with mixed concerns. I can see authentication logic, UI rendering, and data fetching all in one place...`,
@@ -1112,6 +1179,7 @@ async function simulateStreamingResponse(
                 {
                   content: `The useEffect has 3 different dependencies doing unrelated things. This is a classic sign we need to split responsibilities...`,
                   agent: 'reviewer',
+                  postContent: `Refactoring plan ready - separated concerns into focused custom hooks with clear responsibilities`,
                   children: [],
                 },
               ],
@@ -1133,6 +1201,7 @@ async function simulateStreamingResponse(
             {
               content: `I should also set up MSW for API mocking - that way our tests won't depend on external services...`,
               agent: 'file-picker',
+              postContent: `MSW setup complete - API mocking configured for isolated, reliable testing`,
               children: [],
             },
           ],
@@ -1145,6 +1214,7 @@ async function simulateStreamingResponse(
             {
               content: `Good! The coverage report shows we're testing the happy path well, but I should add some edge case tests too...`,
               agent: 'system',
+              postContent: `Edge case tests added - comprehensive test coverage now includes error scenarios and boundary conditions`,
               children: [],
             },
           ],
@@ -1381,7 +1451,8 @@ export function renderSubagentTree(
     )
 
     // Content - 4 additional spaces beyond header indentation
-    if (node.content) {
+    // Only show content if expanded or has no children
+    if (node.content && (isExpanded || !hasChildren)) {
       const contentLines = node.content.split('\n')
       const contentIndentSpaces = headerIndentSpaces + 4
       const contentPrefix = ' '.repeat(contentIndentSpaces)
@@ -1402,25 +1473,25 @@ export function renderSubagentTree(
       node.children.forEach((child, index) => {
         renderNode(child, depth + 1, [...path, index])
       })
-    } else if (hasChildren && !isExpanded) {
-      // Show hint line
-      const childAgentCount = countTotalAgents(node)
-      const hintText = `${childAgentCount} agent response${childAgentCount === 1 ? '' : 's'}`
-
-      const hintLine = `\x1b[3m${hintText}\x1b[23m`
-
-      const hintIndentSpaces = 4 * depth + 4 // Same as content indentation
-      const hintPrefix = ' '.repeat(hintIndentSpaces)
-      appendWrappedLine(
-        lines,
-        hintPrefix + hintLine,
-        stringWidth(hintPrefix),
-        metrics,
-      )
+    } else if (hasChildren && !isExpanded && node.postContent) {
+      // Show postContent for collapsed nodes with children
+      const postLines = node.postContent.split('\n')
+      const postIndentSpaces = 4 * depth + 4 // Same as content indentation
+      const postPrefix = ' '.repeat(postIndentSpaces)
+      postLines.forEach((line) => {
+        if (line.trim()) {
+          appendWrappedLine(
+            lines,
+            postPrefix + bold(green(line)),
+            stringWidth(postPrefix),
+            metrics,
+          )
+        }
+      })
     }
 
-    // Render postContent
-    if (node.postContent) {
+    // Render postContent only when expanded
+    if (node.postContent && isExpanded) {
       const postLines = node.postContent.split('\n')
       const postIndentSpaces = 4 * depth + 4 // Same as content indentation
       const postPrefix = ' '.repeat(postIndentSpaces)
@@ -1446,8 +1517,8 @@ export function renderSubagentTree(
     }
   }
 
-  // Always render the parent's postContent if it exists
-  if (tree.postContent) {
+  // Only render the parent's postContent if tree is expanded
+  if (tree.postContent && uiState.expanded.size > 0) {
     const postLines = tree.postContent.split('\n')
     const postPrefix = '    '
     postLines.forEach((line) => {
@@ -1486,37 +1557,45 @@ function handleTabNavigation(key: any): boolean {
   // Only handle Tab (with or without Shift)
   if (!key || key.name !== 'tab') return false
 
-  const allToggleNodes = getAllToggleNodes()
-  if (allToggleNodes.length === 0) return false
+  const allTargets = getAllNavigationTargets()
+  if (allTargets.length === 0) return false
 
-  const currentFocusId = getCurrentFocusedToggleNodeId()
+  const currentFocusId = getCurrentFocusedNodeId()
   let currentIndex = currentFocusId
-    ? allToggleNodes.findIndex((t) => t.nodeId === currentFocusId)
+    ? allTargets.findIndex((t) => t.nodeId === currentFocusId)
     : -1
 
   if (key.shift) {
-    // Shift+Tab: backward (previous toggle)
+    // Shift+Tab: backward (previous target)
     currentIndex =
-      currentIndex <= 0 ? allToggleNodes.length - 1 : currentIndex - 1
+      currentIndex <= 0 ? allTargets.length - 1 : currentIndex - 1
   } else {
-    // Tab: forward (next toggle)
+    // Tab: forward (next target)
     currentIndex =
-      currentIndex >= allToggleNodes.length - 1 ? 0 : currentIndex + 1
+      currentIndex >= allTargets.length - 1 ? 0 : currentIndex + 1
   }
 
-  const targetToggle = allToggleNodes[currentIndex]
-  if (targetToggle) {
-    // Clear focus from all messages first
+  const targetNode = allTargets[currentIndex]
+  if (targetNode) {
+    // Clear all focus first
     clearAllToggleFocus()
+    chatState.inputBarFocused = false
 
-    // Set focus to the target toggle
-    const targetMessage = chatState.messages.find(
-      (m) => m.id === targetToggle.messageId,
-    )
-    if (targetMessage && targetMessage.subagentUIState) {
-      targetMessage.subagentUIState.focusNodeId = targetToggle.nodeId
+    if (targetNode.type === 'input') {
+      // Focus input bar
+      chatState.inputBarFocused = true
+    } else {
+      // Focus toggle
+      const targetMessage = chatState.messages.find(
+        (m) => m.id === targetNode.messageId,
+      )
+      if (targetMessage && targetMessage.subagentUIState) {
+        targetMessage.subagentUIState.focusNodeId = targetNode.nodeId
+      }
     }
 
+    // Update cursor visibility
+    setupRealCursor()
     updateContentLines()
     renderChat()
     return true
@@ -1533,8 +1612,8 @@ function handleToggleAction(key: any): boolean {
   const currentFocusId = getCurrentFocusedToggleNodeId()
   if (!currentFocusId) return false
 
-  // Don't handle if user is typing - prioritize chat functionality
-  if (chatState.currentInput.length > 0) return false
+  // Don't handle if input bar is focused - prioritize chat functionality
+  if (chatState.inputBarFocused) return false
 
   // Find the currently focused message
   const focusedMessage = chatState.messages.find(
@@ -1591,17 +1670,20 @@ function countTotalAgents(tree: SubagentNode): number {
   return count
 }
 
-function getAllToggleNodes(): Array<{
-  messageId: string
+function getAllNavigationTargets(): Array<{
+  messageId: string | null
   nodeId: string
   depth: number
+  type: 'toggle' | 'input'
 }> {
-  const toggleNodes: Array<{
-    messageId: string
+  const targets: Array<{
+    messageId: string | null
     nodeId: string
     depth: number
+    type: 'toggle' | 'input'
   }> = []
 
+  // Add toggle nodes
   chatState.messages.forEach((message) => {
     if (
       message.role === 'assistant' &&
@@ -1614,10 +1696,11 @@ function getAllToggleNodes(): Array<{
         message.subagentTree.children.length > 0
       if (hasSubagents) {
         const mainToggleNodeId = createNodeId(message.id, []) + '/toggle'
-        toggleNodes.push({
+        targets.push({
           messageId: message.id,
           nodeId: mainToggleNodeId,
           depth: 0,
+          type: 'toggle',
         })
       }
 
@@ -1626,20 +1709,42 @@ function getAllToggleNodes(): Array<{
         message.subagentTree,
         message.id,
         message.subagentUIState,
-        toggleNodes,
+        targets,
         1, // Start at depth 1 since main assistant is depth 0
       )
     }
   })
 
-  return toggleNodes
+  // Add input bar as navigation target
+  targets.push({
+    messageId: null,
+    nodeId: INPUT_BAR_NODE_ID,
+    depth: -1, // Special depth for input bar
+    type: 'input',
+  })
+
+  return targets
+}
+
+function getAllToggleNodes(): Array<{
+  messageId: string
+  nodeId: string
+  depth: number
+}> {
+  return getAllNavigationTargets()
+    .filter((target) => target.type === 'toggle')
+    .map((target) => ({
+      messageId: target.messageId!,
+      nodeId: target.nodeId,
+      depth: target.depth,
+    }))
 }
 
 function collectToggleNodesFromTree(
   node: SubagentNode,
   messageId: string,
   uiState: SubagentUIState,
-  toggleNodes: Array<{ messageId: string; nodeId: string; depth: number }>,
+  targets: Array<{ messageId: string | null; nodeId: string; depth: number; type: 'toggle' | 'input' }>,
   depth: number,
   path: number[] = [],
 ): void {
@@ -1656,7 +1761,7 @@ function collectToggleNodesFromTree(
 
       if (childHasChildren && isNodeExpanded) {
         const toggleNodeId = childNodeId + '/toggle'
-        toggleNodes.push({ messageId, nodeId: toggleNodeId, depth })
+        targets.push({ messageId, nodeId: toggleNodeId, depth, type: 'toggle' })
       }
 
       // Only recurse into this child if the current node is expanded (making child visible)
@@ -1665,13 +1770,28 @@ function collectToggleNodesFromTree(
           child,
           messageId,
           uiState,
-          toggleNodes,
+          targets,
           depth + 1,
           childPath,
         )
       }
     })
   }
+}
+
+function getCurrentFocusedNodeId(): string | null {
+  // Check if input bar is focused
+  if (chatState.inputBarFocused) {
+    return INPUT_BAR_NODE_ID
+  }
+
+  // Check for focused toggle
+  for (const message of chatState.messages) {
+    if (message.subagentUIState?.focusNodeId?.endsWith('/toggle')) {
+      return message.subagentUIState.focusNodeId
+    }
+  }
+  return null
 }
 
 function getCurrentFocusedToggleNodeId(): string | null {
@@ -1681,6 +1801,26 @@ function getCurrentFocusedToggleNodeId(): string | null {
     }
   }
   return null
+}
+
+function clearAllFocus(): boolean {
+  let hadFocus = false
+  
+  // Clear input bar focus
+  if (chatState.inputBarFocused) {
+    chatState.inputBarFocused = false
+    hadFocus = true
+  }
+  
+  // Clear toggle focus
+  chatState.messages.forEach((message) => {
+    if (message.subagentUIState?.focusNodeId) {
+      message.subagentUIState.focusNodeId = null
+      hadFocus = true
+    }
+  })
+  
+  return hadFocus
 }
 
 function clearAllToggleFocus(): boolean {
@@ -1710,8 +1850,13 @@ function autoFocusLatestToggle(): void {
     }
   }
 
-  // Focus on the main assistant toggle to show users there are expandable items
-  message.subagentUIState.focusNodeId = createNodeId(message.id, []) + '/toggle'
+  // Only auto-focus if nothing else is focused and input bar is not focused
+  if (!getCurrentFocusedToggleNodeId() && chatState.inputBarFocused) {
+    // Clear input bar focus and focus on the main assistant toggle
+    chatState.inputBarFocused = false
+    message.subagentUIState.focusNodeId = createNodeId(message.id, []) + '/toggle'
+    setupRealCursor()
+  }
 
   updateContentLines()
   renderChat()
