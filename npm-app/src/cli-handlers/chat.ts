@@ -112,6 +112,7 @@ interface ChatState {
   currentStreamingMessageId?: string
   currentlyStreamingNodeId?: string
   inputBarFocused: boolean
+  shouldScrollToFocusedToggle: boolean
 }
 
 // State
@@ -128,6 +129,7 @@ let chatState: ChatState = {
   currentStreamingMessageId: undefined,
   currentlyStreamingNodeId: undefined,
   inputBarFocused: true, // Start with input bar focused
+  shouldScrollToFocusedToggle: false,
 }
 
 // Cached date formatter for performance
@@ -219,6 +221,43 @@ function scrollToBottom(): void {
   chatState.userHasScrolled = false
 }
 
+function scrollToToggle(toggleNodeId: string, messageId: string): void {
+  // We'll find the focused toggle after content is updated by looking for the highlighted toggle
+  // Set a flag to scroll to the focused toggle after the next render
+  chatState.shouldScrollToFocusedToggle = true
+}
+
+function scrollToFocusedToggle(): void {
+  if (!chatState.shouldScrollToFocusedToggle) return
+
+  const metrics = getTerminalMetrics()
+
+  // Find the line number where the highlighted toggle appears
+  let toggleLineIndex = -1
+  for (let i = 0; i < chatState.contentLines.length; i++) {
+    const line = chatState.contentLines[i]
+    // Look for the highlighted toggle pattern (\x1b[7m[+]\x1b[27m or \x1b[7m[-]\x1b[27m)
+    if (line.includes('\x1b[7m[') && line.includes(']\x1b[27m')) {
+      toggleLineIndex = i
+      break
+    }
+  }
+
+  if (toggleLineIndex !== -1) {
+    // Position the toggle near the top (about 3-4 lines down from the visible area)
+    const targetTopOffset = 4
+    const newScrollOffset = Math.max(0, toggleLineIndex - targetTopOffset)
+
+    // Clamp the scroll offset to valid bounds
+    const maxScrollOffset = computeMaxScrollOffset(metrics)
+    chatState.scrollOffset = Math.min(newScrollOffset, maxScrollOffset)
+    chatState.userHasScrolled = true
+  }
+
+  // Clear the flag
+  chatState.shouldScrollToFocusedToggle = false
+}
+
 function formatQueuePreview(
   message: string,
   queueCount: string,
@@ -248,6 +287,7 @@ function resetChatState(): void {
     currentStreamingMessageId: undefined,
     currentlyStreamingNodeId: undefined,
     inputBarFocused: true, // Start with input bar focused
+    shouldScrollToFocusedToggle: false,
   }
 }
 
@@ -630,6 +670,9 @@ function renderChat() {
   const inputAreaHeight = calculateInputAreaHeight(metrics)
   const maxContentLines = computeMaxContentLines(metrics)
   const maxScrollOffset = computeMaxScrollOffset(metrics)
+
+  // Handle scroll to focused toggle if requested
+  scrollToFocusedToggle()
 
   // Auto-scroll to bottom to show latest messages only if user hasn't manually scrolled
   if (!chatState.userHasScrolled) {
@@ -1626,6 +1669,9 @@ function handleTabNavigation(key: any): boolean {
       )
       if (targetMessage && targetMessage.subagentUIState) {
         targetMessage.subagentUIState.focusNodeId = targetNode.nodeId
+
+        // Auto-scroll to position the focused toggle near the top of the chat
+        scrollToToggle(targetNode.nodeId, targetMessage.id)
       }
     }
 
