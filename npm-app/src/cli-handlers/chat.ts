@@ -954,32 +954,35 @@ async function streamTextToNodeProperty(
     chatState.currentlyStreamingNodeId = node.id
   }
 
-  // If streaming postContent, automatically collapse this node to hide previous content
-  if (property === 'postContent') {
-    // Find the message that contains this node and collapse it
-    const currentStreamingMessage = chatState.messages.find(
-      (m) => m.id === chatState.currentStreamingMessageId,
-    )
-    if (currentStreamingMessage && currentStreamingMessage.subagentUIState) {
-      const uiState = currentStreamingMessage.subagentUIState
-
-      // Collapse this specific node
-      uiState.expanded.delete(node.id)
-
-      // Also collapse any child nodes of this node
-      const childPrefix = node.id + '/'
-      uiState.expanded.forEach((nodeId) => {
-        if (nodeId.startsWith(childPrefix)) {
-          uiState.expanded.delete(nodeId)
-        }
-      })
-    }
-  }
+  let hasCollapsed = false
 
   const words = text.split(' ')
   for (let i = 0; i < words.length; i++) {
     const word = words[i]
     const isLastWord = i === words.length - 1
+
+    // If streaming postContent, automatically collapse this node ONLY on first word
+    // This prevents the delay by deferring the collapse until streaming actually begins
+    if (property === 'postContent' && !hasCollapsed) {
+      const currentStreamingMessage = chatState.messages.find(
+        (m) => m.id === chatState.currentStreamingMessageId,
+      )
+      if (currentStreamingMessage && currentStreamingMessage.subagentUIState) {
+        const uiState = currentStreamingMessage.subagentUIState
+
+        // Collapse this specific node
+        uiState.expanded.delete(node.id)
+
+        // Also collapse any child nodes of this node
+        const childPrefix = node.id + '/'
+        uiState.expanded.forEach((nodeId) => {
+          if (nodeId.startsWith(childPrefix)) {
+            uiState.expanded.delete(nodeId)
+          }
+        })
+        hasCollapsed = true
+      }
+    }
 
     const chunk = (i === 0 ? '' : ' ') + word
     if (property === 'postContent') {
@@ -1098,32 +1101,32 @@ async function simulateStreamingResponse(
   // Generate a response based on the message - show realistic subagent interactions with internal monologues
   const responses: AssistantResponse[] = [
     {
-      content: `I'll help you fix that issue. Let me find the relevant files first.`,
+      content: `I'll help you fix that issue you're encountering. This looks like a complex problem that requires a systematic approach to identify the root cause and implement a robust solution. Let me start by understanding the broader context of your codebase and then dive deep into the specific area where this issue is occurring. From what I can see in your request, this involves multiple components that need to work together seamlessly, and there are likely several interdependencies that we need to carefully consider. I want to make sure I don't just patch the surface-level symptom but actually address the underlying architectural concern that's causing this problem in the first place.`,
       agent: 'assistant',
-      postContent: `Issue resolved! The implementation follows best practices.`,
+      postContent: `Issue comprehensively resolved! I've implemented a robust solution that not only fixes the immediate problem but also improves the overall architecture. The implementation follows industry best practices, includes comprehensive error handling, maintains backward compatibility, and has been thoroughly tested across multiple scenarios. The code is now more maintainable, performant, and resilient to future changes. I've also added detailed documentation and comments to help your team understand the solution and maintain it going forward.`,
       children: [
         {
-          content: `Let me search through the codebase systematically. I'll start by looking for files containing keywords related to "${message.toLowerCase()}"...`,
+          content: `Let me search through the codebase systematically to understand the full scope of this issue. I'll start by looking for files containing keywords related to "${message.toLowerCase()}" and then expand my search to include related components, utilities, and configuration files. I need to understand the data flow, component hierarchy, and any external dependencies that might be affecting this functionality. I'll also check for recent changes in the git history that might have introduced this issue, and look at how similar functionality is implemented elsewhere in the codebase to ensure consistency in our approach.`,
           agent: 'file-picker',
-          postContent: `Found 3 relevant files: auth.ts, userService.js, and login.component.tsx`,
+          postContent: `Comprehensive file analysis complete! Found 12 relevant files across multiple directories: core components (auth.ts, userService.js, login.component.tsx), utility functions (validation.utils.ts, api.helpers.js), configuration files (config.json, environment.ts), test files (auth.test.ts, integration.spec.js), and documentation (README.md, API-docs.md). I've also identified 3 recently modified files that might be related to the issue and 2 deprecated files that should be cleaned up as part of this fix.`,
           children: [
             {
-              content: `Hmm, I need to be strategic about which files to examine. Let me check the most recently modified ones first, then look at the core logic files...`,
+              content: `Looking deeper into the file structure, I need to be strategic about which files to examine first. Let me start with the most recently modified ones, as they're most likely to contain changes that introduced this issue. I'll then move to the core logic files, followed by the configuration and utility files. I'm particularly interested in understanding the authentication flow, how user sessions are managed, and where the validation logic is implemented. I also want to check if there are any environment-specific configurations that might be causing this behavior in certain deployment scenarios.`,
               agent: 'file-picker',
-              postContent: `Analysis complete - prioritizing recently modified auth files for detailed review`,
+              postContent: `Detailed file prioritization analysis complete! I've ranked all files by their relevance and impact on the issue. The top priority files are the recently modified authentication components, followed by the session management utilities, then the validation logic, and finally the configuration files. I've also identified several files that contain similar patterns that should be updated for consistency once we implement the fix.`,
               children: [],
             },
           ],
         },
         {
-          content: `Now I'll carefully review these changes. Let me check for common pitfalls: null safety, type consistency, error handling...`,
+          content: `Now I'll carefully review all the identified files and their interconnections. Let me start with a comprehensive code review focusing on common pitfalls: null safety checks, type consistency across the codebase, proper error handling and propagation, memory leaks in event listeners or subscriptions, race conditions in async operations, and security vulnerabilities like XSS or injection attacks. I'll also check for performance issues, accessibility concerns, and compliance with the team's coding standards. This review will help me understand not just what's causing the current issue, but also identify any other potential problems that we should address while we're making changes.`,
           agent: 'reviewer',
-          postContent: `Code review passed - all changes look good! No security issues detected.`,
+          postContent: `Comprehensive code review completed successfully! The analysis reveals that while the core logic is sound, there are several areas that need attention. The main issue stems from inadequate error handling in the async authentication flow, but I've also identified opportunities for performance improvements, better type safety, enhanced security measures, and improved code organization. All changes have been thoroughly tested and validated against the existing test suite, with additional test cases added to cover the edge cases that were previously missing.`,
           children: [
             {
-              content: `The error handling looks solid, but I should double-check the edge cases. What happens if the API returns unexpected data?`,
+              content: `The error handling in the main authentication flow looks solid at first glance, but I should double-check all the edge cases to make sure we're not missing anything critical. What happens if the API returns unexpected data formats? How do we handle network timeouts or connection failures? Are we properly cleaning up resources when operations are cancelled? What about scenarios where the user's session expires mid-request, or when multiple authentication requests are made simultaneously? I need to trace through all possible execution paths to ensure our error handling is comprehensive and doesn't leave the application in an inconsistent state.`,
               agent: 'reviewer',
-              postContent: `Edge case analysis complete - error handling is robust and handles all scenarios properly`,
+              postContent: `Comprehensive edge case analysis completed! I've identified and addressed 8 critical edge cases that weren't properly handled in the original implementation. The error handling is now robust and covers scenarios including network failures, malformed API responses, session expiration, concurrent authentication attempts, browser storage issues, and various timeout conditions. The implementation now gracefully degrades under adverse conditions and provides meaningful feedback to users while maintaining system stability.`,
               children: [],
             },
           ],
@@ -1131,24 +1134,24 @@ async function simulateStreamingResponse(
       ],
     },
     {
-      content: `I'll implement the feature you requested.`,
+      content: `I'll implement the feature you requested, but I want to make sure I do this right from the start. This feature has the potential to significantly impact user experience and system performance, so I need to think through all the implications carefully. Let me start by analyzing the current architecture to understand how this new functionality should integrate with existing systems. I'll need to consider data flow patterns, state management approaches, component lifecycle implications, and how this feature will scale as your user base grows. I also want to ensure that the implementation is accessible, performant, and maintainable for your development team going forward.`,
       agent: 'assistant',
-      postContent: `Feature implementation complete with comprehensive tests.`,
+      postContent: `Feature implementation completed successfully with comprehensive testing, documentation, and performance optimization! The new functionality integrates seamlessly with your existing architecture while following all established patterns and conventions. I've implemented proper error handling, loading states, and user feedback mechanisms. The feature includes comprehensive unit tests, integration tests, and end-to-end test scenarios, bringing overall test coverage to 96%. Performance benchmarks show excellent results with minimal impact on existing functionality. I've also created detailed documentation including implementation notes, usage examples, and maintenance guidelines for your team.`,
       children: [
         {
-          content: `@file-picker: I need to understand the current architecture before making changes`,
+          content: `@file-picker: Before I start implementing this feature, I need to develop a comprehensive understanding of the current architecture and how this new functionality should integrate with existing systems. Let me analyze the component structure, data flow patterns, state management implementation, routing configuration, and API integration points. I also want to understand the current design system, styling approaches, and any architectural patterns that are already established in the codebase. This will help me ensure that the new feature feels native to the existing application and doesn't introduce any inconsistencies or technical debt.`,
           agent: 'system',
-          postContent: `Architectural analysis complete - ready to proceed with changes`,
+          postContent: `Comprehensive architectural analysis completed! I have a thorough understanding of the current system architecture, including component patterns, state management flows, API integration strategies, and design system conventions. I've identified the optimal integration points for the new feature and created a detailed implementation plan that maintains consistency with existing patterns while introducing minimal complexity. The analysis reveals several opportunities for code reuse and confirms that the proposed feature aligns well with the current architectural direction.`,
           children: [
             {
-              content: `Let me map out the component hierarchy first. Looking at imports and exports to understand dependencies...`,
+              content: `Let me start by mapping out the complete component hierarchy and understanding how data flows through the application. I need to identify all the imports and exports, understand the dependency graph, and see how different parts of the application communicate with each other. I'm particularly interested in understanding the state management patterns, whether you're using Redux, Context API, or another approach, and how component props are structured and validated. I also want to understand the current routing setup and how navigation is handled throughout the application.`,
               agent: 'file-picker',
-              postContent: `Located src/components/Button.tsx, src/types/ui.ts, and src/hooks/useAuth.ts`,
+              postContent: `Component hierarchy analysis complete! I've mapped out the entire application structure and identified key integration points. The analysis shows a well-organized component architecture with clear separation of concerns. Key findings include: 23 reusable UI components in src/components/, 8 custom hooks in src/hooks/, 12 utility functions in src/utils/, and a clear state management pattern using Context API with reducer patterns. The routing is handled by React Router with 15 defined routes and proper code splitting implemented.`,
               children: [
                 {
-                  content: `I notice this component is used in 12 different places. I need to ensure my changes don't break existing functionality...`,
+                  content: `Looking at the usage patterns across the codebase, I can see that this component is used in 12 different places throughout the application. This means I need to be extremely careful with any changes to ensure I don't break existing functionality. Let me analyze each usage context to understand the different ways this component is being used, what props are passed in each case, and whether there are any edge cases or special handling requirements. I'll also check if there are any tests that specifically validate the current behavior so I can ensure those continue to pass after my changes.`,
                   agent: 'file-picker',
-                  postContent: `Dependency analysis complete - identified safe refactoring points with minimal impact`,
+                  postContent: `Comprehensive usage analysis and dependency impact assessment completed! I've analyzed all 12 usage contexts and identified safe refactoring opportunities that will enhance the component without breaking existing functionality. The analysis reveals 3 different usage patterns, with 8 components using the standard pattern, 3 using extended configurations, and 1 legacy usage that can be safely modernized. I've confirmed that all existing tests will continue to pass and identified 4 additional test cases that should be added to cover the new functionality.`,
                   children: [],
                 },
               ],
@@ -1156,14 +1159,14 @@ async function simulateStreamingResponse(
           ],
         },
         {
-          content: `Running comprehensive test suite to ensure nothing breaks...`,
+          content: `Now let me run the comprehensive test suite to establish a baseline and ensure that all existing functionality is working correctly before I start making changes. I want to run unit tests, integration tests, and end-to-end tests to get a complete picture of the current system stability. I'll also run performance benchmarks and accessibility audits to establish baseline metrics that I can compare against after implementing the new feature. This will help me ensure that the new functionality doesn't introduce any regressions or performance degradations.`,
           agent: 'system',
-          postContent: `✅ All 28 tests passing, coverage increased to 94%`,
+          postContent: `✅ Comprehensive testing completed successfully! All 147 tests are passing with 94% code coverage. Performance benchmarks show excellent results with average page load times under 2 seconds and smooth 60fps animations. Accessibility audit reveals WCAG AA compliance with perfect scores for keyboard navigation and screen reader compatibility. Memory usage is stable with no detected leaks. The codebase is in excellent condition and ready for the new feature implementation.`,
           children: [
             {
-              content: `Tests look good, but let me also check the integration tests to make sure the new feature plays well with the existing system...`,
+              content: `The test results look excellent, but let me also run the integration tests and end-to-end test scenarios to make sure the new feature will play well with the existing system in real-world usage scenarios. I want to test user workflows that span multiple components and features to ensure that adding this new functionality won't disrupt any existing user journeys. I'll also run load tests to understand how the system behaves under stress and whether the new feature might impact performance during peak usage periods.`,
               agent: 'system',
-              postContent: `Integration tests pass - new feature integrates seamlessly with existing system`,
+              postContent: `Integration and end-to-end testing completed with outstanding results! All user workflows function perfectly, with seamless integration between existing and new functionality. Load testing shows the system handles 10,000 concurrent users without degradation. Cross-browser testing confirms compatibility across all major browsers and devices. The new feature enhances existing workflows without disrupting any current functionality, and performance actually improves by 15% due to optimizations made during implementation.`,
               children: [],
             },
           ],
@@ -1171,32 +1174,32 @@ async function simulateStreamingResponse(
       ],
     },
     {
-      content: `Let me analyze the error and provide a solution.`,
+      content: `Let me analyze this error thoroughly and provide a comprehensive solution. Error debugging requires a systematic approach to understand not just the immediate symptom, but the underlying cause and any related issues that might be lurking in the codebase. I'll start by examining the error stack trace, understanding the execution context, and then trace back through the code path to identify exactly where and why this error is occurring. I also want to check if this is an isolated incident or part of a broader pattern that might indicate a systemic issue that needs to be addressed at a higher level.`,
       agent: 'assistant',
-      postContent: `Error analysis complete. Root cause identified and fix applied successfully.`,
+      postContent: `Comprehensive error analysis and resolution completed successfully! I've identified and fixed the root cause, which was a complex interaction between session management, async operations, and error handling. The solution includes proper error boundaries, improved state management, robust session validation, and comprehensive logging for future debugging. I've also implemented preventive measures to catch similar issues before they reach production, including enhanced unit tests, integration tests, and monitoring alerts. The fix has been thoroughly tested across multiple scenarios and browsers to ensure reliability.`,
       children: [
         {
-          content: `I'm seeing an error pattern here. Let me search for similar issues in the codebase to understand if this is systemic...`,
+          content: `I'm seeing an interesting error pattern here that suggests this might not be an isolated issue. Let me search comprehensively through the codebase to understand if this is part of a broader systemic problem that needs to be addressed. I'll look for similar error patterns, common code structures that might be prone to the same issue, and any recent changes that might have introduced this behavior. I want to understand the full scope of the problem before implementing a fix, because if this is a pattern issue, we might need to address it in multiple places to prevent similar errors from occurring in the future.`,
           agent: 'file-picker',
-          postContent: `Found 2 files with similar patterns - this might be a broader issue`,
+          postContent: `Comprehensive pattern analysis completed! I've identified 7 files with similar error-prone patterns across the authentication, data fetching, and state management modules. This appears to be a systemic issue related to how async operations are handled when user sessions become invalid. The pattern affects user authentication flows, API request handling, and local storage operations. I've categorized the findings by severity and impact, with 3 critical issues requiring immediate attention and 4 moderate issues that should be addressed as part of this fix.`,
           children: [
             {
-              content: `Interesting, these files all share the same async pattern. I bet the issue is in how we're handling Promise rejections...`,
+              content: `Looking deeper into these files, I can see they all share the same fundamental async operation pattern, which is interesting and concerning. The pattern seems to assume that certain async operations will always succeed, but they don't properly handle the cases where the underlying assumptions are violated. For example, they assume the user session is valid, that the network connection is stable, and that API responses will always be in the expected format. I suspect the core issue is in how we're handling Promise rejections and error propagation throughout the async call chain.`,
               agent: 'file-picker',
-              postContent: `Pattern analysis complete - confirmed Promise rejection handling issue across multiple files`,
+              postContent: `In-depth async pattern analysis completed! The investigation confirms that all affected files use a flawed async/await pattern that doesn't properly handle Promise rejections, especially in cases where external dependencies (network, authentication, storage) fail unexpectedly. I've identified the specific anti-patterns being used and developed a standardized approach for proper async error handling that can be applied consistently across all affected files. The solution includes proper try-catch blocks, timeout handling, and graceful degradation strategies.`,
               children: [],
             },
           ],
         },
         {
-          content: `Let me think through this systematically. The stack trace shows the error originates in userService.getProfile()...`,
+          content: `Now let me think through this error systematically, starting with the stack trace analysis. The error originates in userService.getProfile(), but I need to understand the complete execution context to identify the root cause. Let me trace through the code path: what triggers this function call, what state the application is in when it's called, what external dependencies it relies on, and what assumptions it makes about the current environment. I also want to understand the timing aspects - when does this error occur, is it related to specific user actions, and are there any race conditions or timing-sensitive operations that might be contributing to the problem.`,
           agent: 'thinker',
-          postContent: `Root cause identified: Missing null check when user session is expired`,
+          postContent: `Systematic root cause analysis completed! The core issue is a race condition in the session management system where user authentication state can become inconsistent during async operations. Specifically, when a user's session expires while an API request is in flight, the application doesn't properly handle the transition from authenticated to unauthenticated state. This results in null pointer exceptions when subsequent operations try to access user data that's no longer available. The fix requires implementing proper session state synchronization and graceful handling of authentication state transitions.`,
           children: [
             {
-              content: `The issue is subtle - we're assuming the session is valid, but if it expires mid-request, the user object becomes null. Classic race condition.`,
+              content: `Diving deeper into this issue, I can see it's more subtle than it initially appeared. The problem occurs when we assume the user session is valid throughout the entire async operation, but if the session expires mid-request, the user object becomes null unexpectedly. This is a classic race condition where the timing of session expiration relative to ongoing operations creates an inconsistent state. The issue is compounded by the fact that different parts of the application check session validity at different times, creating windows where the application state is inconsistent.`,
               agent: 'thinker',
-              postContent: `Root cause confirmed - implemented session validation fix to prevent race condition`,
+              postContent: `Comprehensive race condition analysis and solution implementation completed! I've implemented a robust session management system that properly handles state transitions and prevents race conditions. The solution includes: atomic session state updates, proper synchronization between authentication checks and API operations, graceful handling of session expiration during ongoing requests, and comprehensive error recovery mechanisms. The fix has been tested extensively with various timing scenarios to ensure reliability under all conditions.`,
               children: [],
             },
           ],
@@ -1204,24 +1207,24 @@ async function simulateStreamingResponse(
       ],
     },
     {
-      content: `I'll refactor this code to improve maintainability.`,
+      content: `I'll refactor this code to significantly improve maintainability, readability, and overall code quality. The current implementation has grown organically over time and now exhibits several code smells that make it difficult to maintain, test, and extend. I can see opportunities to apply SOLID principles, improve separation of concerns, reduce complexity, and make the code more resilient to future changes. This refactoring will not only make the code cleaner but also improve performance, reduce bugs, and make it easier for your team to work with going forward. Let me start by analyzing the current structure and identifying the most impactful improvements we can make.`,
       agent: 'assistant',
-      postContent: `Refactoring complete! Code is now cleaner, more testable, and follows SOLID principles.`,
+      postContent: `Comprehensive refactoring completed successfully! The code has been transformed from a monolithic, tightly-coupled structure into a clean, modular, and highly maintainable architecture. The refactoring includes: separation of concerns with dedicated custom hooks, improved component composition, enhanced type safety with strict TypeScript, comprehensive error boundaries, optimized performance with proper memoization, improved accessibility, and extensive test coverage. The codebase now follows SOLID principles, uses modern React patterns, and is significantly easier to understand, test, and extend. Code complexity has been reduced by 60% while maintaining all existing functionality.`,
       children: [
         {
-          content: `@reviewer: Let me analyze the current code structure and identify refactoring opportunities`,
+          content: `@reviewer: Before I start the refactoring process, let me conduct a comprehensive analysis of the current code structure to identify all the areas that need improvement and prioritize them based on impact and complexity. I need to understand the current architecture, identify code smells and anti-patterns, analyze dependencies and coupling, assess test coverage, and evaluate performance characteristics. This analysis will help me create a systematic refactoring plan that improves the code without introducing any regressions or breaking existing functionality.`,
           agent: 'system',
-          postContent: `Code structure analysis complete - refactoring opportunities identified`,
+          postContent: `Comprehensive code structure analysis completed! I've identified 12 major areas for improvement, including: component decomposition opportunities, state management optimizations, custom hook extractions, type safety enhancements, performance optimizations, accessibility improvements, and test coverage gaps. The analysis reveals that while the current code functions correctly, it has accumulated significant technical debt that's impacting maintainability and development velocity. I've created a prioritized refactoring roadmap that addresses the most critical issues first while maintaining system stability throughout the process.`,
           children: [
             {
-              content: `This component is doing too much - 247 lines with mixed concerns. I can see authentication logic, UI rendering, and data fetching all in one place...`,
+              content: `Looking at this component in detail, I can see it's grown to 247 lines and is clearly doing too much. It's handling authentication logic, managing complex UI state, fetching data from multiple APIs, handling form validation, managing side effects, and rendering a complex UI structure - all in a single component. This violates the Single Responsibility Principle and makes the component extremely difficult to test, debug, and maintain. I can see authentication logic mixed with presentation logic, data fetching intertwined with UI updates, and business logic scattered throughout the component. This is a textbook example of a "God Component" that needs to be broken down into smaller, focused pieces.`,
               agent: 'reviewer',
-              postContent: `Identified 4 improvement opportunities: extract custom hooks, separate business logic, add error boundaries, improve prop types`,
+              postContent: `Detailed component decomposition analysis completed! I've identified 8 distinct responsibilities that can be extracted into separate, focused components and custom hooks. The refactoring plan includes: extracting authentication logic into a custom useAuth hook, separating data fetching into dedicated API hooks, creating reusable UI components for form elements, implementing proper error boundaries, adding loading state management, and creating a clean component hierarchy. Each extracted piece will have a single, clear responsibility and be fully testable in isolation.`,
               children: [
                 {
-                  content: `The useEffect has 3 different dependencies doing unrelated things. This is a classic sign we need to split responsibilities...`,
+                  content: `The useEffect in this component is particularly problematic - it has 3 different dependencies that trigger completely unrelated side effects. One dependency handles user authentication state changes, another manages data fetching when component props change, and the third deals with cleanup operations. This is a classic anti-pattern that makes the component unpredictable and hard to debug. When any of these dependencies change, all the side effects run, even if they're not related to the specific change that occurred. This can lead to unnecessary API calls, performance issues, and race conditions.`,
                   agent: 'reviewer',
-                  postContent: `Refactoring plan ready - separated concerns into focused custom hooks with clear responsibilities`,
+                  postContent: `UseEffect separation and optimization completed! I've split the monolithic useEffect into 4 focused effects, each with clear, single-purpose dependencies. The authentication effect only responds to auth state changes, the data fetching effect is triggered by relevant prop changes, the cleanup effect handles component unmounting, and a new effect manages real-time updates. Each effect is now predictable, testable, and performant. I've also implemented proper cleanup functions and dependency arrays to prevent memory leaks and unnecessary re-renders.`,
                   children: [],
                 },
               ],
@@ -1526,7 +1529,7 @@ export function renderSubagentTree(
     } else if (hasChildren && !isExpanded && node.postContent) {
       // Show postContent for collapsed nodes with children
       const postLines = node.postContent.split('\n')
-      const postIndentSpaces = 4 * depth // Same as header indentation
+      const postIndentSpaces = 4 * depth + 4 // Same as header indentation + 4 extra spaces
       const postPrefix = ' '.repeat(postIndentSpaces)
       postLines.forEach((line) => {
         if (line.trim()) {
@@ -1554,7 +1557,7 @@ export function renderSubagentTree(
   const rootNodeId = tree.id
   if (tree.postContent && !uiState.expanded.has(rootNodeId)) {
     const postLines = tree.postContent.split('\n')
-    const postPrefix = ''
+    const postPrefix = '    ' // 4 extra spaces for indentation
     postLines.forEach((line) => {
       if (line.trim()) {
         appendWrappedLine(
