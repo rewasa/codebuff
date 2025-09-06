@@ -36,9 +36,9 @@
   "dependencies": {
     "@codebuff/code-map": "workspace:*",
     "@codebuff/common": "workspace:*",
+    "@lvce-editor/ripgrep": "2.3.0",
     "@types/diff": "8.0.0",
     "@types/micromatch": "^4.0.9",
-    "@vscode/ripgrep": "1.15.9",
     "ai": "5.0.0",
     "axios": "1.7.4",
     "commander": "^13.1.0",

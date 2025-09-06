@@ -1,7 +1,7 @@
 import { spawn } from 'child_process'
 import * as path from 'path'
 
-import { rgPath } from '@vscode/ripgrep'
+import { rgPath } from '@lvce-editor/ripgrep'
 
 import type { CodebuffToolOutput } from '../../../common/src/tools/list'
 

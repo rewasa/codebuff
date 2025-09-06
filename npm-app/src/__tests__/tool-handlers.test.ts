@@ -13,10 +13,13 @@ import {
   describe,
   expect,
   mock,
+  spyOn,
   test,
 } from 'bun:test'
 
 import { handleCodeSearch } from '../tool-handlers'
+import * as ripgrepModule from '../native/ripgrep'
+import { rgPath } from '@lvce-editor/ripgrep'
 
 describe('handleCodeSearch', () => {
   const testDataDir = path.resolve(__dirname, 'data')
@@ -33,6 +36,10 @@ describe('handleCodeSearch', () => {
   })
 
   beforeEach(async () => {
+    // Mock getRgPath to return the @lvce-editor/ripgrep package binary path
+    // This uses the binary provided by the package, not system ripgrep
+    spyOn(ripgrepModule, 'getRgPath').mockResolvedValue(rgPath)
+
     const projectRoot = path.resolve(__dirname, '../../')
     mockGetProjectRoot.mockReturnValue(projectRoot)
     console.log('Setting mock project root to:', projectRoot)
@@ -65,6 +72,9 @@ export interface TestInterface {
   })
 
   afterEach(async () => {
+    // Restore all mocks
+    mock.restore()
+
     // Clean up test data directory
     try {
       await fs.promises.rm(testDataDir, { recursive: true, force: true })

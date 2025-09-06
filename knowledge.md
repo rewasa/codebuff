@@ -61,6 +61,14 @@ Codebuff is a tool for editing codebases via natural language instruction to Buf
 - Run commands with `bun` instead of `npm` (e.g., `bun install` not `npm install`)
 - Use `bun run` for script execution
 
+### Ripgrep Package
+
+- **Current Package**: `@lvce-editor/ripgrep` v2.3.0 (as of migration)
+- **Previous Package**: `@vscode/ripgrep` (migrated away due to flaky downloads and GitHub rate limiting issues)
+- **Migration Benefits**: More reliable binary downloads, fixes GitHub API rate limiting problems, drop-in replacement
+- **Used in**: npm-app and SDK packages for code search functionality
+- **Alternative Considered**: `ripgrep-bin` (simpler but less actively maintained)
+
 ## TypeScript Build State Management
 
 ### Cleaning Build State

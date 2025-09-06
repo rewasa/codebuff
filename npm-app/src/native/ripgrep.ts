@@ -1,7 +1,7 @@
 import { mkdirSync } from 'fs'
 import path from 'path'
 
-import { rgPath as vscodeRgPath } from '@vscode/ripgrep'
+import { rgPath as vscodeRgPath } from '@lvce-editor/ripgrep'
 import { spawnSync } from 'bun'
 
 import { CONFIG_DIR } from '../credentials'
@@ -27,8 +27,8 @@ const getRipgrepPath = async (): Promise<string> => {
     // Use require() on a static string path to make sure rg is included in the compiled binary
     const embeddedRgPath =
       process.platform === 'win32'
-        ? require('../../../node_modules/@vscode/ripgrep/bin/rg.exe')
-        : require('../../../node_modules/@vscode/ripgrep/bin/rg')
+        ? require('../../../node_modules/@lvce-editor/ripgrep/bin/rg.exe')
+        : require('../../../node_modules/@lvce-editor/ripgrep/bin/rg')
 
     // Create cache directory
     mkdirSync(path.dirname(outPath), { recursive: true })
