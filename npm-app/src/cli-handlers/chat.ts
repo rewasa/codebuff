@@ -469,12 +469,8 @@ function finishStreamingMessage(messageId: string): void {
   }
   chatState.currentlyStreamingNodeId = undefined
 
-  // Collapse all subagent tree nodes when streaming finishes
-  if (message.subagentUIState) {
-    message.subagentUIState.expanded.clear()
-    message.subagentUIState.focusNodeId = null
-    message.subagentUIState.firstChildProgress.clear()
-  }
+  // Keep expansion state when streaming finishes
+  // (no auto-collapse behavior)
 
   updateContentLines()
   renderChat()
@@ -530,12 +526,7 @@ export function renderAssistantMessage(
       message.subagentTree && message.subagentTree.postContent
     const shouldShowOnlyPostContent = isFullyCollapsed && hasPostContentToShow
 
-    // Hide parent content when a child is processing in THIS message
-    const isProcessingChildren =
-      chatState.currentlyStreamingNodeId?.includes('/') &&
-      chatState.currentStreamingMessageId === message.id
-
-    if (!shouldShowOnlyPostContent && !isProcessingChildren) {
+    if (!shouldShowOnlyPostContent) {
       // Show preview or full content based on expansion state
       const shouldShowPreview = hasSubagents && !isMainExpanded
 
@@ -554,8 +545,8 @@ export function renderAssistantMessage(
         const previewLines = wrappedLines.slice(0, PREVIEW_LINES)
 
         previewLines.forEach((line) => {
-          const indentedLine = '    ' + line // 4 spaces for assistant content with subagents
-          appendWrappedLine(lines, indentedLine, 4, metrics, [], 0)
+          const indentedLine = line // 0 spaces to match subagent indentation
+          appendWrappedLine(lines, indentedLine, 0, metrics, [], 0)
         })
 
         // Add "..." if content was truncated
@@ -568,8 +559,8 @@ export function renderAssistantMessage(
         const contentLines = message.content.split('\n')
 
         contentLines.forEach((line) => {
-          const indentedLine = hasSubagents ? '    ' + line : line // 4 spaces if has subagents, 0 if simple message
-          const indentLevel = hasSubagents ? 4 : 0
+          const indentedLine = line // 0 spaces to match subagent indentation
+          const indentLevel = 0
           appendWrappedLine(lines, indentedLine, indentLevel, metrics, [], 0)
         })
       }
@@ -997,35 +988,13 @@ async function streamTextToNodeProperty(
     chatState.currentlyStreamingNodeId = node.id
   }
 
-  let hasCollapsed = false
-
   const words = text.split(' ')
   for (let i = 0; i < words.length; i++) {
     const word = words[i]
     const isLastWord = i === words.length - 1
 
-    // If streaming postContent, automatically collapse this node ONLY on first word
-    // This prevents the delay by deferring the collapse until streaming actually begins
-    if (property === 'postContent' && !hasCollapsed) {
-      const currentStreamingMessage = chatState.messages.find(
-        (m) => m.id === chatState.currentStreamingMessageId,
-      )
-      if (currentStreamingMessage && currentStreamingMessage.subagentUIState) {
-        const uiState = currentStreamingMessage.subagentUIState
-
-        // Collapse this specific node
-        uiState.expanded.delete(node.id)
-
-        // Also collapse any child nodes of this node
-        const childPrefix = node.id + '/'
-        uiState.expanded.forEach((nodeId) => {
-          if (nodeId.startsWith(childPrefix)) {
-            uiState.expanded.delete(nodeId)
-          }
-        })
-        hasCollapsed = true
-      }
-    }
+    // No auto-collapse behavior when streaming postContent
+    // Keep expansion state as-is
 
     const chunk = (i === 0 ? '' : ' ') + word
     if (property === 'postContent') {
@@ -1539,16 +1508,11 @@ export function renderSubagentTree(
       metrics,
     )
 
-    // Content - 4 additional spaces beyond header indentation
+    // Content - indented to align with the header
     // Only show content if expanded or has no children
-    // Also hide content if one of this node's descendants is currently processing in THIS message
-    const isProcessingChildren =
-      chatState.currentlyStreamingNodeId?.startsWith(nodeId + '/') &&
-      chatState.currentStreamingMessageId === messageId
-
-    if (node.content && (isExpanded || !hasChildren) && !isProcessingChildren) {
+    if (node.content && (isExpanded || !hasChildren)) {
       const contentLines = node.content.split('\n')
-      const contentIndentSpaces = headerIndentSpaces + 4
+      const contentIndentSpaces = 4 * depth
       const contentPrefix = ' '.repeat(contentIndentSpaces)
       contentLines.forEach((line) => {
         if (line.trim()) {
@@ -1572,7 +1536,7 @@ export function renderSubagentTree(
     } else if (hasChildren && !isExpanded && node.postContent) {
       // Show postContent for collapsed nodes with children
       const postLines = node.postContent.split('\n')
-      const postIndentSpaces = 4 * depth + 4 // Same as header indentation + 4 extra spaces
+      const postIndentSpaces = 4 * depth // Same as header indentation
       const postPrefix = ' '.repeat(postIndentSpaces)
       postLines.forEach((line) => {
         if (line.trim()) {
@@ -1600,7 +1564,7 @@ export function renderSubagentTree(
   const rootNodeId = tree.id
   if (tree.postContent && !uiState.expanded.has(rootNodeId)) {
     const postLines = tree.postContent.split('\n')
-    const postPrefix = '    ' // 4 extra spaces for indentation
+    const postPrefix = '' // 0 spaces to match assistant indentation
     postLines.forEach((line) => {
       if (line.trim()) {
         appendWrappedLine(
@@ -1718,6 +1682,11 @@ function handleToggleAction(key: any): boolean {
     const isExpanded = uiState.expanded.has(actualNodeId)
 
     if (isExpanded) {
+      // Check if any descendants are currently streaming - if so, don't allow collapse
+      if (isAnyDescendantStreaming(actualNodeId, focusedMessage.id)) {
+        return true // Consume the key press but don't collapse
+      }
+
       // Collapse the node
       uiState.expanded.delete(actualNodeId)
       // Remove all descendant nodes from expanded set
@@ -1774,6 +1743,11 @@ function handleArrowToggleAction(key: any): boolean {
     if (key.name === 'left') {
       // Left arrow: close (collapse) if expanded, otherwise navigate to previous toggle
       if (isExpanded) {
+        // Check if any descendants are currently streaming - if so, don't allow collapse
+        if (isAnyDescendantStreaming(actualNodeId, focusedMessage.id)) {
+          return true // Consume the key press but don't collapse
+        }
+
         uiState.expanded.delete(actualNodeId)
         // Remove all descendant nodes from expanded set
         const descendantPrefix = actualNodeId + '/'
@@ -1985,6 +1959,22 @@ function clearAllToggleFocus(): boolean {
     }
   })
   return hadFocus
+}
+
+function isAnyDescendantStreaming(nodeId: string, messageId: string): boolean {
+  // Check if the current streaming node is this node or any of its descendants
+  if (
+    chatState.currentlyStreamingNodeId &&
+    chatState.currentStreamingMessageId === messageId
+  ) {
+    // If the streaming node starts with our nodeId followed by '/', it's a descendant
+    // Or if it's exactly our nodeId, we're streaming
+    return (
+      chatState.currentlyStreamingNodeId === nodeId ||
+      chatState.currentlyStreamingNodeId.startsWith(nodeId + '/')
+    )
+  }
+  return false
 }
 
 function autoFocusLatestToggle(): void {
