@@ -459,21 +459,7 @@ export function renderAssistantMessage(
       message.subagentTree && message.subagentTree.postContent
     const shouldShowOnlyPostContent = isFullyCollapsed && hasPostContentToShow
 
-    if (shouldShowOnlyPostContent) {
-      // Show only postContent when collapsed
-      const postLines = message.subagentTree!.postContent!.split('\n')
-      const postPrefix = '    '
-      postLines.forEach((line) => {
-        if (line.trim()) {
-          appendWrappedLine(
-            lines,
-            postPrefix + bold(green(line)),
-            stringWidth(postPrefix),
-            metrics,
-          )
-        }
-      })
-    } else {
+    if (!shouldShowOnlyPostContent) {
       // Show preview or full content based on expansion state
       const shouldShowPreview = hasSubagents && !isMainExpanded
 
@@ -492,7 +478,7 @@ export function renderAssistantMessage(
         const previewLines = wrappedLines.slice(0, PREVIEW_LINES)
 
         previewLines.forEach((line) => {
-          const indentedLine = '    ' + line // 4 spaces for assistant content
+          const indentedLine = '    ' + line // 4 spaces for assistant content with subagents
           appendWrappedLine(lines, indentedLine, 4, metrics, [], 0)
         })
 
@@ -506,8 +492,9 @@ export function renderAssistantMessage(
         const contentLines = message.content.split('\n')
 
         contentLines.forEach((line) => {
-          const indentedLine = '    ' + line // 4 spaces for assistant content
-          appendWrappedLine(lines, indentedLine, 4, metrics, [], 0)
+          const indentedLine = hasSubagents ? '    ' + line : line // 4 spaces if has subagents, 0 if simple message
+          const indentLevel = hasSubagents ? 4 : 0
+          appendWrappedLine(lines, indentedLine, indentLevel, metrics, [], 0)
         })
       }
     }
@@ -531,8 +518,8 @@ export function renderUserMessage(
   if (message.content && message.content.trim()) {
     const contentLines = message.content.split('\n')
     contentLines.forEach((line) => {
-      const indentedLine = '    ' + line // 4 spaces for user content
-      appendWrappedLine(lines, indentedLine, 4, metrics, [], 0)
+      const indentedLine = line // no additional indentation beyond side padding
+      appendWrappedLine(lines, indentedLine, 0, metrics, [], 0)
     })
   }
 
@@ -1417,7 +1404,7 @@ export function renderSubagentTree(
     path: number[] = [],
   ): void {
     const nodeId = createNodeId(messageId, path)
-    const hasChildren = node.children && node.children.length > 0
+    const hasChildren = (node.children && node.children.length > 0) || !!node.postContent
     const isExpanded = uiState.expanded.has(nodeId)
 
     // Progressive indentation: 4 spaces per level
@@ -1478,13 +1465,15 @@ export function renderSubagentTree(
 
     // Render children if expanded
     if (hasChildren && isExpanded) {
-      node.children.forEach((child, index) => {
-        renderNode(child, depth + 1, [...path, index])
-      })
+      if (node.children && node.children.length > 0) {
+        node.children.forEach((child, index) => {
+          renderNode(child, depth + 1, [...path, index])
+        })
+      }
     } else if (hasChildren && !isExpanded && node.postContent) {
       // Show postContent for collapsed nodes with children
       const postLines = node.postContent.split('\n')
-      const postIndentSpaces = 4 * depth + 4 // Same as content indentation
+      const postIndentSpaces = 4 * depth // Same as header indentation
       const postPrefix = ' '.repeat(postIndentSpaces)
       postLines.forEach((line) => {
         if (line.trim()) {
@@ -1498,22 +1487,6 @@ export function renderSubagentTree(
       })
     }
 
-    // Render postContent only when expanded
-    if (node.postContent && isExpanded) {
-      const postLines = node.postContent.split('\n')
-      const postIndentSpaces = 4 * depth + 4 // Same as content indentation
-      const postPrefix = ' '.repeat(postIndentSpaces)
-      postLines.forEach((line) => {
-        if (line.trim()) {
-          appendWrappedLine(
-            lines,
-            postPrefix + bold(green(line)),
-            stringWidth(postPrefix),
-            metrics,
-          )
-        }
-      })
-    }
   }
 
   // Render children only if the tree is not fully collapsed
@@ -1525,10 +1498,11 @@ export function renderSubagentTree(
     }
   }
 
-  // Only render the parent's postContent if tree is expanded
-  if (tree.postContent && uiState.expanded.size > 0) {
+  // Only render the parent's postContent if the root node is collapsed
+  const rootNodeId = tree.id
+  if (tree.postContent && !uiState.expanded.has(rootNodeId)) {
     const postLines = tree.postContent.split('\n')
-    const postPrefix = '    '
+    const postPrefix = ''
     postLines.forEach((line) => {
       if (line.trim()) {
         appendWrappedLine(
@@ -1764,7 +1738,7 @@ function collectToggleNodesFromTree(
     node.children.forEach((child, index) => {
       const childPath = [...path, index]
       const childNodeId = createNodeId(messageId, childPath)
-      const childHasChildren = child.children && child.children.length > 0
+      const childHasChildren = (child.children && child.children.length > 0) || !!child.postContent
 
       // Only add toggle if this child has children AND this node is currently expanded (making child visible)
       const nodeId = createNodeId(messageId, path)
