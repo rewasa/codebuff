@@ -8,10 +8,9 @@ import {
   EXIT_ALT_BUFFER,
   CLEAR_SCREEN,
   SHOW_CURSOR,
+  HIDE_CURSOR,
   MOVE_CURSOR,
   SET_CURSOR_DEFAULT,
-  DISABLE_CURSOR_BLINK,
-  CURSOR_SET_INVISIBLE_BLOCK,
 } from '../utils/terminal'
 
 // Constants
@@ -225,11 +224,11 @@ function resetChatState(): void {
 function setupRealCursor(): void {
   if (chatState.inputBarFocused) {
     // Show cursor when input bar is focused
+    process.stdout.write(SHOW_CURSOR)
     process.stdout.write(SET_CURSOR_DEFAULT)
   } else {
     // Hide cursor when navigating toggles
-    process.stdout.write(CURSOR_SET_INVISIBLE_BLOCK)
-    process.stdout.write(DISABLE_CURSOR_BLINK)
+    process.stdout.write(HIDE_CURSOR)
   }
 }
 
@@ -239,13 +238,13 @@ function restoreDefaultRealCursor(): void {
 }
 
 function positionRealCursor(): void {
-  // Only position cursor if input bar is focused
   if (!chatState.inputBarFocused) {
     return
   }
 
-  // Position cursor at the input area where typing occurs
   const metrics = getTerminalMetrics()
+
+  // Position cursor at the input area where typing occurs
   const inputAreaHeight = calculateInputAreaHeight(metrics)
 
   // Calculate where the input area starts
@@ -1567,12 +1566,10 @@ function handleTabNavigation(key: any): boolean {
 
   if (key.shift) {
     // Shift+Tab: backward (previous target)
-    currentIndex =
-      currentIndex <= 0 ? allTargets.length - 1 : currentIndex - 1
+    currentIndex = currentIndex <= 0 ? allTargets.length - 1 : currentIndex - 1
   } else {
     // Tab: forward (next target)
-    currentIndex =
-      currentIndex >= allTargets.length - 1 ? 0 : currentIndex + 1
+    currentIndex = currentIndex >= allTargets.length - 1 ? 0 : currentIndex + 1
   }
 
   const targetNode = allTargets[currentIndex]
@@ -1744,7 +1741,12 @@ function collectToggleNodesFromTree(
   node: SubagentNode,
   messageId: string,
   uiState: SubagentUIState,
-  targets: Array<{ messageId: string | null; nodeId: string; depth: number; type: 'toggle' | 'input' }>,
+  targets: Array<{
+    messageId: string | null
+    nodeId: string
+    depth: number
+    type: 'toggle' | 'input'
+  }>,
   depth: number,
   path: number[] = [],
 ): void {
@@ -1805,13 +1807,13 @@ function getCurrentFocusedToggleNodeId(): string | null {
 
 function clearAllFocus(): boolean {
   let hadFocus = false
-  
+
   // Clear input bar focus
   if (chatState.inputBarFocused) {
     chatState.inputBarFocused = false
     hadFocus = true
   }
-  
+
   // Clear toggle focus
   chatState.messages.forEach((message) => {
     if (message.subagentUIState?.focusNodeId) {
@@ -1819,7 +1821,7 @@ function clearAllFocus(): boolean {
       hadFocus = true
     }
   })
-  
+
   return hadFocus
 }
 
@@ -1854,7 +1856,8 @@ function autoFocusLatestToggle(): void {
   if (!getCurrentFocusedToggleNodeId() && chatState.inputBarFocused) {
     // Clear input bar focus and focus on the main assistant toggle
     chatState.inputBarFocused = false
-    message.subagentUIState.focusNodeId = createNodeId(message.id, []) + '/toggle'
+    message.subagentUIState.focusNodeId =
+      createNodeId(message.id, []) + '/toggle'
     setupRealCursor()
   }
 
