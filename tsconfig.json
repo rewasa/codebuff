@@ -4,6 +4,7 @@
     "noEmit": true, // don't place JS everywhere while hacking
     "baseUrl": ".", // Bun & editors see the aliases
     "paths": {
+      "@codebuff/display/*": ["./display/*"],
       "@codebuff/common/*": ["./common/src/*"],
       "@codebuff/backend/*": ["./backend/src/*"],
       "@codebuff/web/*": ["./web/src/*"],
@@ -17,6 +18,7 @@
   },
   "files": [],
   "references": [
+    { "path": "./display" },
     { "path": "./common" },
     { "path": "./backend" },
     { "path": "./npm-app" },
