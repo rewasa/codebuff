@@ -61,8 +61,9 @@ describe('Chat Tree Line Wrapping', () => {
       // First line should be metadata
       expect(lines[0]).toContain('Assistant')
 
-      // Second line should start with simple indentation
-      expect(lines[1]).toContain('  This is a very long')
+      // Second line should show preview (last 2 lines with "...") since collapsed
+      expect(lines[1]).toContain('...')
+      expect(lines[1]).toContain('terminal because it exceeds the')
 
       // Continuation lines should maintain proper indentation
       const continuationLines = lines.slice(2)

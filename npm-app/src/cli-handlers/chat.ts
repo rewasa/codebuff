@@ -1,4 +1,4 @@
-import { green, yellow, cyan, bold, gray, blue } from 'picocolors'
+import { green, yellow, cyan, bold, gray, blue, red } from 'picocolors'
 import stringWidth from 'string-width'
 import wrapAnsi from 'wrap-ansi'
 
@@ -16,6 +16,7 @@ import {
 // Constants
 const SIDE_PADDING = 2
 const HEADER_TEXT = '💬 Codebuff Chat'
+const STATUS_UPDATE_INTERVAL = 100 // ms between status updates
 // Dynamic status text that adapts to terminal width
 function getStatusText(metrics: TerminalMetrics): string {
   const availableWidth = metrics.contentWidth
@@ -75,6 +76,10 @@ export interface SubagentNode {
   content: string
   children: SubagentNode[]
   postContent?: string
+  status?: 'pending' | 'running' | 'complete' | 'error'
+  statusMessage?: string
+  startTime?: number
+  endTime?: number
 }
 
 export interface SubagentUIState {
@@ -113,6 +118,8 @@ interface ChatState {
   currentlyStreamingNodeId?: string
   inputBarFocused: boolean
   shouldScrollToFocusedToggle: boolean
+  userInteractedDuringStream?: boolean
+  scrollPositionBeforeToggle?: number // Store scroll position before toggle action
 }
 
 // State
@@ -130,6 +137,7 @@ let chatState: ChatState = {
   currentlyStreamingNodeId: undefined,
   inputBarFocused: true, // Start with input bar focused
   shouldScrollToFocusedToggle: false,
+  scrollPositionBeforeToggle: undefined,
 }
 
 // Cached date formatter for performance
@@ -288,6 +296,7 @@ function resetChatState(): void {
     currentlyStreamingNodeId: undefined,
     inputBarFocused: true, // Start with input bar focused
     shouldScrollToFocusedToggle: false,
+    scrollPositionBeforeToggle: undefined,
   }
 }
 
@@ -469,8 +478,9 @@ function finishStreamingMessage(messageId: string): void {
   }
   chatState.currentlyStreamingNodeId = undefined
 
-  // Keep expansion state when streaming finishes
-  // (no auto-collapse behavior)
+  // Don't auto-collapse - keep subagents visible after streaming completes
+  // This allows users to review the full execution without having to manually expand
+  // The tree will remain in whatever state it was during execution
 
   updateContentLines()
   renderChat()
@@ -498,6 +508,16 @@ export function renderAssistantMessage(
     message.subagentUIState &&
     message.subagentUIState.expanded.size > 0
 
+  // Check if any child subagent is expanded (for minimizing parent)
+  const hasExpandedChild =
+    hasSubagents &&
+    message.subagentUIState &&
+    Array.from(message.subagentUIState.expanded).some(
+      (nodeId) =>
+        nodeId !== createNodeId(message.id, []) &&
+        nodeId.startsWith(`m:${message.id}/`),
+    )
+
   // Check if the main assistant toggle is focused
   const mainToggleNodeId = createNodeId(message.id, []) + '/toggle'
   const isMainToggleFocused =
@@ -514,9 +534,16 @@ export function renderAssistantMessage(
   } else {
     assistantHeader = `${bold(blue('Assistant'))} ${gray(`[${timeStr}]`)}`
   }
+
+  // If a child is expanded, add ellipsis on same line as header
+  if (hasExpandedChild) {
+    assistantHeader += ' ' + gray('...')
+  }
+
   lines.push(' '.repeat(metrics.sidePadding) + assistantHeader)
 
-  if (message.content && message.content.trim()) {
+  // Only show content if no child is expanded
+  if (!hasExpandedChild && message.content && message.content.trim()) {
     // Check if we should show only postContent (when collapsed and has postContent)
     const isFullyCollapsed =
       hasSubagents &&
@@ -531,28 +558,28 @@ export function renderAssistantMessage(
       const shouldShowPreview = hasSubagents && !isMainExpanded
 
       if (shouldShowPreview) {
-        // Show preview (first PREVIEW_LINES of wrapped content)
+        // Show preview - just the last 2 lines with "..." prefix for top-level assistant
         const contentLines = message.content.split('\n')
-        const wrappedLines: string[] = []
+        const allWrappedLines: string[] = []
 
         for (const line of contentLines) {
-          const wrapped = wrapLine(line, metrics.contentWidth - 4) // Account for tree prefix
-          wrappedLines.push(...wrapped)
-          if (wrappedLines.length >= PREVIEW_LINES) break
+          const wrapped = wrapLine(line, metrics.contentWidth)
+          allWrappedLines.push(...wrapped)
         }
 
-        // Take only first PREVIEW_LINES
-        const previewLines = wrappedLines.slice(0, PREVIEW_LINES)
-
-        previewLines.forEach((line) => {
-          const indentedLine = line // 0 spaces to match subagent indentation
-          appendWrappedLine(lines, indentedLine, 0, metrics, [], 0)
-        })
-
-        // Add "..." if content was truncated
-        if (wrappedLines.length > PREVIEW_LINES) {
-          const ellipsisLine = '  ' + gray('...')
-          lines.push(' '.repeat(metrics.sidePadding) + ellipsisLine)
+        if (allWrappedLines.length <= 2) {
+          // If 2 lines or less, show all
+          allWrappedLines.forEach((line) => {
+            const indentedLine = line
+            appendWrappedLine(lines, indentedLine, 0, metrics, [], 0)
+          })
+        } else {
+          // Show last 2 lines with ellipsis prepended to first line
+          const lastLines = allWrappedLines.slice(-2)
+          lastLines.forEach((line, index) => {
+            const lineWithEllipsis = index === 0 ? gray('...') + line : line
+            appendWrappedLine(lines, lineWithEllipsis, 0, metrics, [], 0)
+          })
         }
       } else {
         // Show full content when expanded or no subagents
@@ -1302,124 +1329,166 @@ async function simulateStreamingResponse(
     }
   }
 
-  // After main content is streamed, set up and progressively stream the subagent tree
+  // After main content is streamed, set up and execute the subagent tree with status
   if (chatState.currentStreamingMessageId && selectedResponse.children) {
     const streamingMessage = chatState.messages.find(
       (m) => m.id === chatState.currentStreamingMessageId,
     )
     if (streamingMessage) {
-      // Initialize empty tree structure (postContent will be streamed later)
+      // Initialize tree structure
       streamingMessage.subagentTree = {
         id: createNodeId(streamingMessage.id, []),
         type: 'assistant',
         content: selectedResponse.content,
         children: [],
-        // postContent intentionally omitted - will be streamed after all children
+        postContent: selectedResponse.postContent,
+        status: 'complete',
       }
       streamingMessage.subagentUIState = {
-        expanded: new Set(),
+        expanded: new Set([createNodeId(streamingMessage.id, [])]), // Default assistant toggle to expanded
         focusNodeId: null,
         firstChildProgress: new Map(),
       }
 
-      // Stream subagent tree content progressively
-      const allPostContentNodes = await streamSubagentTreeContent(
-        selectedResponse,
-        streamingMessage,
-        [],
-      )
-
-      // Add parent postContent to the collection (should be streamed last)
-      if (selectedResponse.postContent) {
-        allPostContentNodes.push({
-          node: streamingMessage.subagentTree,
-          postContent: selectedResponse.postContent,
-        })
-      }
-
-      // After ALL subagents are done, stream postContent in the correct order
-      for (const item of allPostContentNodes) {
-        // Small pause before postContent
-        await new Promise((resolve) =>
-          setTimeout(resolve, 200 + Math.random() * 100),
-        )
-
-        // Initialize and stream postContent
-        item.node.postContent = ''
-        await streamTextToNodeProperty(
-          item.node,
-          'postContent',
-          item.postContent,
-        )
-      }
+      // Execute subagent tree with status updates
+      await executeSubagentTree(selectedResponse, streamingMessage, [])
     }
   }
 }
 
-// Cleanup function to ensure we exit chat buffer on process termination
-export function cleanupChatBuffer() {
-  if (isInChatBuffer) {
-    restoreDefaultRealCursor()
-    process.stdout.write(SHOW_CURSOR)
-    process.stdout.write(EXIT_ALT_BUFFER)
-    isInChatBuffer = false
+// Helper function to update node status during execution
+async function updateNodeStatus(
+  node: SubagentNode,
+  status: 'pending' | 'running' | 'complete' | 'error',
+  statusMessage: string = '',
+): Promise<void> {
+  node.status = status
+  node.statusMessage = statusMessage
+
+  if (status === 'running' && !node.startTime) {
+    node.startTime = Date.now()
+  } else if ((status === 'complete' || status === 'error') && !node.endTime) {
+    node.endTime = Date.now()
   }
 
-  // Restore normal terminal mode
-  if (process.stdin.isTTY) {
-    process.stdin.setRawMode(false)
-  }
+  updateContentLines()
+  renderChat()
 }
 
-// Register cleanup on process exit
-process.on('exit', cleanupChatBuffer)
-process.on('SIGINT', cleanupChatBuffer)
-process.on('SIGTERM', cleanupChatBuffer)
+// Helper function to simulate node execution with status updates
+async function simulateNodeExecution(
+  node: SubagentNode,
+  content: string,
+  statusMessages: string[],
+): Promise<void> {
+  // Start with running status
+  await updateNodeStatus(node, 'running', statusMessages[0] || 'Starting...')
 
-// New: Subagent tree utilities
-export function createNodeId(messageId: string, path: number[] = []): string {
-  if (path.length === 0) return `m:${messageId}`
-  return `m:${messageId}/${path.join('/')}`
-}
-
-function parseNodePath(nodeId: string): { messageId: string; path: number[] } {
-  const parts = nodeId.split('/')
-  const messageId = parts[0].substring(2) // Remove 'm:' prefix
-  const path = parts.slice(1).map(Number)
-  return { messageId, path }
-}
-
-function findNodeByPath(
-  tree: SubagentNode,
-  path: number[],
-): SubagentNode | null {
-  let current = tree
-  for (const index of path) {
-    if (!current.children || index >= current.children.length) {
-      return null
-    }
-    current = current.children[index]
-  }
-  return current
-}
-
-function buildSubagentTree(mockResponse: any): SubagentNode {
-  function convertNode(node: any, path: number[] = []): SubagentNode {
-    const nodeId = createNodeId('temp', path)
-    const children = (node.children || []).map((child: any, index: number) =>
-      convertNode(child, [...path, index]),
+  // Simulate work with status updates
+  for (let i = 0; i < statusMessages.length; i++) {
+    await updateNodeStatus(node, 'running', statusMessages[i])
+    await new Promise((resolve) =>
+      setTimeout(resolve, 500 + Math.random() * 1000),
     )
-
-    return {
-      id: nodeId,
-      type: node.agent || 'unknown',
-      content: node.content || '',
-      children,
-      postContent: node.postContent,
-    }
   }
 
-  return convertNode(mockResponse)
+  // Store the full content but don't stream it
+  node.content = content
+
+  // Mark as complete
+  await updateNodeStatus(node, 'complete', 'Done')
+  await new Promise((resolve) => setTimeout(resolve, 200))
+
+  // Clear status message after completion
+  node.statusMessage = ''
+  updateContentLines()
+  renderChat()
+}
+
+// Helper function to progressively build and execute subagent tree
+async function executeSubagentTree(
+  responseNode: any,
+  message: ChatMessage,
+  currentPath: number[],
+): Promise<void> {
+  if (!responseNode.children || responseNode.children.length === 0) {
+    return
+  }
+
+  // Process children in parallel groups for realistic execution
+  const children = responseNode.children
+
+  for (let childIndex = 0; childIndex < children.length; childIndex++) {
+    const child = children[childIndex]
+    const childPath = [...currentPath, childIndex]
+
+    // Create the child node in the tree
+    const childNode: SubagentNode = {
+      id: createNodeId(message.id, childPath),
+      type: child.agent || 'unknown',
+      content: child.content || '',
+      children: [],
+      postContent: child.postContent,
+      status: 'pending',
+      statusMessage: '',
+    }
+
+    // Add child to parent node in tree
+    if (currentPath.length === 0) {
+      // Top-level child
+      message.subagentTree!.children.push(childNode)
+    } else {
+      // Find parent node and add child
+      const parentNode = findNodeByPath(message.subagentTree!, currentPath)
+      if (parentNode) {
+        parentNode.children.push(childNode)
+      }
+    }
+
+    // Don't auto-expand during execution - keep view clean
+    // message.subagentUIState!.expanded.add(childNode.id)
+
+    // Trigger re-render to show the new subagent node
+    updateContentLines()
+    renderChat()
+
+    // Execute this child with status updates
+    const statusMessages = getStatusMessagesForAgent(child.agent)
+    await simulateNodeExecution(childNode, child.content, statusMessages)
+
+    // Process grandchildren if any
+    if (child.children && child.children.length > 0) {
+      await executeSubagentTree(child, message, childPath)
+    }
+  }
+}
+
+// Get realistic status messages for different agent types
+function getStatusMessagesForAgent(agentType: string): string[] {
+  const messages: { [key: string]: string[] } = {
+    'file-picker': [
+      'Scanning codebase...',
+      'Analyzing file patterns...',
+      'Finding relevant files...',
+    ],
+    reviewer: [
+      'Analyzing code changes...',
+      'Checking for issues...',
+      'Validating patterns...',
+    ],
+    system: [
+      'Running tests...',
+      'Executing commands...',
+      'Processing results...',
+    ],
+    thinker: [
+      'Analyzing problem...',
+      'Evaluating solutions...',
+      'Formulating approach...',
+    ],
+  }
+
+  return messages[agentType] || ['Processing...', 'Working...', 'Finalizing...']
 }
 
 // Helper function to append wrapped lines with proper indentation
@@ -1464,19 +1533,59 @@ export function renderSubagentTree(
     node: SubagentNode,
     depth: number,
     path: number[] = [],
+    isFirstChild: boolean = false,
+    isLastChild: boolean = false,
+    parentPath: number[] = [],
   ): void {
     const nodeId = createNodeId(messageId, path)
     const hasChildren =
       (node.children && node.children.length > 0) || !!node.postContent
     const isExpanded = uiState.expanded.has(nodeId)
 
+    // Check if any sibling at this level is expanded
+    const hasSiblingExpanded =
+      depth > 0 &&
+      Array.from(uiState.expanded).some((expandedId) => {
+        // Check if it's a sibling (same parent, different index)
+        if (!expandedId.startsWith(`m:${messageId}/`)) return false
+        const expandedPath = expandedId
+          .substring(`m:${messageId}/`.length)
+          .split('/')
+          .map(Number)
+        if (expandedPath.length !== path.length) return false
+        if (parentPath.length > 0) {
+          // Check same parent
+          for (let i = 0; i < parentPath.length; i++) {
+            if (expandedPath[i] !== parentPath[i]) return false
+          }
+        }
+        // Different index at current level
+        return expandedPath[path.length - 1] !== path[path.length - 1]
+      })
+
+    // Check if any descendant is expanded (for minimizing this node when child/grandchild is expanded)
+    const hasDescendantExpanded = Array.from(uiState.expanded).some(
+      (expandedId) => {
+        if (!expandedId.startsWith(nodeId + '/')) return false
+        // It's a descendant if it starts with our nodeId followed by '/'
+        return true
+      },
+    )
+
+    // Minimize if a sibling is expanded and this node is not, OR if this node has an expanded descendant
+    const shouldMinimize =
+      (hasSiblingExpanded && !isExpanded) ||
+      (isExpanded && hasDescendantExpanded)
+
+    // Add spacing above expanded nodes for better visual separation
+    if (isExpanded && depth > 0) {
+      lines.push('') // Empty line for visual spacing
+    }
+
     // Progressive indentation: 4 spaces per level
     const agentName = node.type
       ? node.type.charAt(0).toUpperCase() + node.type.slice(1)
       : 'Agent'
-
-    const now = new Date()
-    const timeStr = timeFormatter.format(now)
 
     const expandCollapseIndicator = hasChildren
       ? isExpanded
@@ -1491,13 +1600,25 @@ export function renderSubagentTree(
     // Agent header - 4 spaces per depth level from left margin (including side padding)
     const headerIndentSpaces = 4 * depth
     let agentHeader = ''
+    const statusText = formatNodeStatus(node)
+
     if (expandCollapseIndicator) {
       const toggleText = isToggleFocused
         ? `\x1b[7m${expandCollapseIndicator}\x1b[27m` // Highlighted toggle
         : expandCollapseIndicator // Regular toggle
-      agentHeader = `${toggleText} ${bold(blue(agentName))} ${gray(`[${timeStr}]`)}`
+      agentHeader = `${toggleText} ${bold(blue(agentName))} ${statusText}`
     } else {
-      agentHeader = `${bold(blue(agentName))} ${gray(`[${timeStr}]`)}`
+      agentHeader = `${bold(blue(agentName))} ${statusText}`
+    }
+
+    // Add status message if present
+    if (node.statusMessage) {
+      agentHeader += ` ${gray(node.statusMessage)}`
+    }
+
+    // Add ellipsis on same line if minimized
+    if (shouldMinimize) {
+      agentHeader += ' ' + gray('...')
     }
 
     const headerPrefix = ' '.repeat(headerIndentSpaces)
@@ -1508,12 +1629,15 @@ export function renderSubagentTree(
       metrics,
     )
 
-    // Content - indented to align with the header
-    // Only show content if expanded or has no children
-    if (node.content && (isExpanded || !hasChildren)) {
+    // Content - Show content if expanded (even if not complete) and not minimized
+    if (shouldMinimize) {
+      // Skip content for minimized siblings (ellipsis already added to header)
+    } else if (node.content && isExpanded) {
       const contentLines = node.content.split('\n')
       const contentIndentSpaces = 4 * depth
       const contentPrefix = ' '.repeat(contentIndentSpaces)
+
+      // Show full content when expanded
       contentLines.forEach((line) => {
         if (line.trim()) {
           appendWrappedLine(
@@ -1524,25 +1648,61 @@ export function renderSubagentTree(
           )
         }
       })
+
+      // Show postContent at the same indentation if expanded and node is complete
+      if (
+        node.postContent &&
+        (node.status === 'complete' || node.status === undefined)
+      ) {
+        const postLines = node.postContent.split('\n')
+        postLines.forEach((line) => {
+          if (line.trim()) {
+            appendWrappedLine(
+              lines,
+              contentPrefix + gray(line),
+              stringWidth(contentPrefix),
+              metrics,
+            )
+          }
+        })
+      }
     }
 
     // Render children if expanded
     if (hasChildren && isExpanded) {
       if (node.children && node.children.length > 0) {
         node.children.forEach((child, index) => {
-          renderNode(child, depth + 1, [...path, index])
+          const isFirstChild = index === 0
+          const isLastChild = index === node.children.length - 1
+          renderNode(
+            child,
+            depth + 1,
+            [...path, index],
+            isFirstChild,
+            isLastChild,
+            path,
+          )
         })
+        // Add spacing after the last child
+        lines.push('')
       }
-    } else if (hasChildren && !isExpanded && node.postContent) {
-      // Show postContent for collapsed nodes with children
+    } else if (
+      !shouldMinimize &&
+      hasChildren &&
+      !isExpanded &&
+      node.postContent &&
+      (node.status === 'complete' || node.status === undefined)
+    ) {
+      // Show full postContent for collapsed nodes when the node itself is complete (unless minimized)
       const postLines = node.postContent.split('\n')
-      const postIndentSpaces = 4 * depth // Same as header indentation
+      const postIndentSpaces = 4 * depth
       const postPrefix = ' '.repeat(postIndentSpaces)
+
       postLines.forEach((line) => {
         if (line.trim()) {
           appendWrappedLine(
             lines,
-            postPrefix + bold(green(line)),
+            postPrefix + gray(line),
             stringWidth(postPrefix),
             metrics,
           )
@@ -1551,30 +1711,35 @@ export function renderSubagentTree(
     }
   }
 
-  // Render children only if the tree is not fully collapsed
-  if (uiState.expanded.size > 0) {
-    if (tree.children && tree.children.length > 0) {
-      tree.children.forEach((child, index) => {
-        renderNode(child, 1, [index])
+  // Check if the root assistant node is expanded (any node is expanded means root is expanded)
+  const isRootExpanded = uiState.expanded.size > 0
+  
+  // Only render children if the root assistant node is expanded
+  if (isRootExpanded && tree.children && tree.children.length > 0) {
+    tree.children.forEach((child, index) => {
+      const isFirstChild = index === 0
+      const isLastChild = index === tree.children.length - 1
+      renderNode(child, 1, [index], isFirstChild, isLastChild, [])
+    })
+  } else if (!isRootExpanded) {
+    // Root is collapsed - show status or postContent
+    if (tree.status && tree.status !== 'complete') {
+      // Show status message while running
+      const statusMsg = tree.statusMessage || 'Processing...'
+      appendWrappedLine(lines, gray(statusMsg), 0, metrics)
+    } else if (
+      tree.postContent &&
+      tree.status === 'complete' &&
+      allChildrenComplete(tree)
+    ) {
+      // Show full postContent only when the parent AND all children are complete
+      const postLines = tree.postContent.split('\n')
+      postLines.forEach((line) => {
+        if (line.trim()) {
+          appendWrappedLine(lines, bold(green(line)), 0, metrics)
+        }
       })
     }
-  }
-
-  // Only render the parent's postContent if the root node is collapsed
-  const rootNodeId = tree.id
-  if (tree.postContent && !uiState.expanded.has(rootNodeId)) {
-    const postLines = tree.postContent.split('\n')
-    const postPrefix = '' // 0 spaces to match assistant indentation
-    postLines.forEach((line) => {
-      if (line.trim()) {
-        appendWrappedLine(
-          lines,
-          postPrefix + bold(green(line)),
-          stringWidth(postPrefix),
-          metrics,
-        )
-      }
-    })
   }
 
   return lines
@@ -1635,6 +1800,7 @@ function handleTabNavigation(key: any): boolean {
         targetMessage.subagentUIState.focusNodeId = targetNode.nodeId
 
         // Auto-scroll to position the focused toggle near the top of the chat
+        // This is reserved for tab/shift+tab navigation only
         scrollToToggle(targetNode.nodeId, targetMessage.id)
       }
     }
@@ -1681,6 +1847,10 @@ function handleToggleAction(key: any): boolean {
     const actualNodeId = uiState.focusNodeId.slice(0, -7) // Remove '/toggle'
     const isExpanded = uiState.expanded.has(actualNodeId)
 
+    // Find the focused toggle line index before changes
+    const oldToggleIndex = findFocusedToggleLineIndex(chatState.contentLines)
+    const screenRow = oldToggleIndex !== -1 ? oldToggleIndex - chatState.scrollOffset : -1
+
     if (isExpanded) {
       // Check if any descendants are currently streaming - if so, don't allow collapse
       if (isAnyDescendantStreaming(actualNodeId, focusedMessage.id)) {
@@ -1701,7 +1871,23 @@ function handleToggleAction(key: any): boolean {
       uiState.expanded.add(actualNodeId)
     }
 
+    // Mark that user interacted during stream
+    if (chatState.currentStreamingMessageId) {
+      chatState.userInteractedDuringStream = true
+    }
+
     updateContentLines()
+    
+    // Restore scroll to keep focused toggle at same screen position
+    if (screenRow !== -1) {
+      const newToggleIndex = findFocusedToggleLineIndex(chatState.contentLines)
+      if (newToggleIndex !== -1) {
+        const newScrollOffset = clampScroll(newToggleIndex - screenRow)
+        chatState.scrollOffset = newScrollOffset
+        chatState.userHasScrolled = true
+      }
+    }
+    
     renderChat()
     return true
   }
@@ -1743,6 +1929,10 @@ function handleArrowToggleAction(key: any): boolean {
     if (key.name === 'left') {
       // Left arrow: close (collapse) if expanded, otherwise navigate to previous toggle
       if (isExpanded) {
+        // Find the focused toggle line index before changes
+        const oldToggleIndex = findFocusedToggleLineIndex(chatState.contentLines)
+        const screenRow = oldToggleIndex !== -1 ? oldToggleIndex - chatState.scrollOffset : -1
+        
         // Check if any descendants are currently streaming - if so, don't allow collapse
         if (isAnyDescendantStreaming(actualNodeId, focusedMessage.id)) {
           return true // Consume the key press but don't collapse
@@ -1757,6 +1947,17 @@ function handleArrowToggleAction(key: any): boolean {
           }
         })
         updateContentLines()
+        
+        // Restore scroll to keep focused toggle at same screen position
+        if (screenRow !== -1) {
+          const newToggleIndex = findFocusedToggleLineIndex(chatState.contentLines)
+          if (newToggleIndex !== -1) {
+            const newScrollOffset = clampScroll(newToggleIndex - screenRow)
+            chatState.scrollOffset = newScrollOffset
+            chatState.userHasScrolled = true
+          }
+        }
+        
         renderChat()
       } else {
         // Already closed, navigate to previous toggle (like Shift+Tab)
@@ -1765,8 +1966,23 @@ function handleArrowToggleAction(key: any): boolean {
     } else if (key.name === 'right') {
       // Right arrow: open (expand) if closed, otherwise navigate to next toggle
       if (!isExpanded) {
+        // Find the focused toggle line index before changes
+        const oldToggleIndex = findFocusedToggleLineIndex(chatState.contentLines)
+        const screenRow = oldToggleIndex !== -1 ? oldToggleIndex - chatState.scrollOffset : -1
+        
         uiState.expanded.add(actualNodeId)
         updateContentLines()
+        
+        // Restore scroll to keep focused toggle at same screen position
+        if (screenRow !== -1) {
+          const newToggleIndex = findFocusedToggleLineIndex(chatState.contentLines)
+          if (newToggleIndex !== -1) {
+            const newScrollOffset = clampScroll(newToggleIndex - screenRow)
+            chatState.scrollOffset = newScrollOffset
+            chatState.userHasScrolled = true
+          }
+        }
+        
         renderChat()
       } else {
         // Already open, navigate to next toggle (like Tab)
@@ -1987,7 +2203,7 @@ function autoFocusLatestToggle(): void {
   // Initialize UI state if not exists
   if (!message.subagentUIState) {
     message.subagentUIState = {
-      expanded: new Set(),
+      expanded: new Set([createNodeId(message.id, [])]), // Default assistant toggle to expanded
       focusNodeId: null,
       firstChildProgress: new Map(),
     }
@@ -2004,4 +2220,154 @@ function autoFocusLatestToggle(): void {
 
   updateContentLines()
   renderChat()
+}
+
+// Cleanup function to ensure we exit chat buffer on process termination
+export function cleanupChatBuffer() {
+  if (isInChatBuffer) {
+    restoreDefaultRealCursor()
+    process.stdout.write(SHOW_CURSOR)
+    process.stdout.write(EXIT_ALT_BUFFER)
+    isInChatBuffer = false
+  }
+
+  // Restore normal terminal mode
+  if (process.stdin.isTTY) {
+    process.stdin.setRawMode(false)
+  }
+}
+
+// Register cleanup on process exit
+process.on('exit', cleanupChatBuffer)
+process.on('SIGINT', cleanupChatBuffer)
+process.on('SIGTERM', cleanupChatBuffer)
+
+// New: Subagent tree utilities
+export function createNodeId(messageId: string, path: number[] = []): string {
+  if (path.length === 0) return `m:${messageId}`
+  return `m:${messageId}/${path.join('/')}`
+}
+
+function parseNodePath(nodeId: string): { messageId: string; path: number[] } {
+  const parts = nodeId.split('/')
+  const messageId = parts[0].substring(2) // Remove 'm:' prefix
+  const path = parts.slice(1).map(Number)
+  return { messageId, path }
+}
+
+function findNodeByPath(
+  tree: SubagentNode,
+  path: number[],
+): SubagentNode | null {
+  let current = tree
+  for (const index of path) {
+    if (!current.children || index >= current.children.length) {
+      return null
+    }
+    current = current.children[index]
+  }
+  return current
+}
+
+function buildSubagentTree(mockResponse: any): SubagentNode {
+  function convertNode(node: any, path: number[] = []): SubagentNode {
+    const nodeId = createNodeId('temp', path)
+    const children = (node.children || []).map((child: any, index: number) =>
+      convertNode(child, [...path, index]),
+    )
+
+    return {
+      id: nodeId,
+      type: node.agent || 'unknown',
+      content: node.content || '',
+      children,
+      postContent: node.postContent,
+      status: 'pending',
+      statusMessage: '',
+    }
+  }
+
+  return convertNode(mockResponse)
+}
+
+// Helper function to check if all children in a node are complete
+function allChildrenComplete(node: SubagentNode): boolean {
+  if (!node.children || node.children.length === 0) {
+    return true
+  }
+
+  for (const child of node.children) {
+    // Child is not complete if it's still pending/running or if any of its children are not complete
+    if (
+      child.status &&
+      child.status !== 'complete' &&
+      child.status !== 'error'
+    ) {
+      return false
+    }
+    if (!allChildrenComplete(child)) {
+      return false
+    }
+  }
+
+  return true
+}
+
+function formatNodeStatus(node: SubagentNode): string {
+  const now = Date.now()
+  let timeStr = ''
+
+  if (node.startTime) {
+    if (node.endTime) {
+      // Show completion time
+      const duration = Math.round((node.endTime - node.startTime) / 1000)
+      const minutes = Math.floor(duration / 60)
+      const seconds = duration % 60
+      timeStr =
+        minutes > 0
+          ? `${minutes}:${seconds.toString().padStart(2, '0')}`
+          : `${seconds}s`
+    } else {
+      // Show elapsed time for running tasks
+      const elapsed = Math.round((now - node.startTime) / 1000)
+      const minutes = Math.floor(elapsed / 60)
+      const seconds = elapsed % 60
+      timeStr =
+        minutes > 0
+          ? `${minutes}:${seconds.toString().padStart(2, '0')}`
+          : `${seconds}s`
+    }
+  }
+
+  let statusText = ''
+  switch (node.status) {
+    case 'pending':
+      statusText = gray('[Pending]')
+      break
+    case 'running':
+      statusText = yellow(`[Running ${timeStr}]`)
+      break
+    case 'complete':
+      statusText = green(`[OK ${timeStr}]`)
+      break
+    case 'error':
+      statusText = red(`[Error ${timeStr}]`)
+      break
+    default:
+      statusText = ''
+  }
+
+  return statusText
+}
+
+// Helper function to find the line index of the focused toggle
+function findFocusedToggleLineIndex(contentLines: string[]): number {
+  for (let i = 0; i < contentLines.length; i++) {
+    const line = contentLines[i]
+    // Look for the highlighted toggle pattern (\x1b[7m[+]\x1b[27m or \x1b[7m[-]\x1b[27m)
+    if (line.includes('\x1b[7m[') && line.includes(']\x1b[27m')) {
+      return i
+    }
+  }
+  return -1
 }

@@ -93,4 +93,10 @@ export const cliOptions: CliParam[] = [
     menuDescription: 'Log subagent messages to trace files',
     hidden: false,
   },
+  {
+    flags: '--chat',
+    description: 'Launch directly into altbuffer chat mode',
+    menuDescription: 'Launch directly into altbuffer chat mode',
+    hidden: false,
+  },
 ]
