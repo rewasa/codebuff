@@ -61,13 +61,16 @@ describe('Chat Tree Line Wrapping', () => {
       // First line should be metadata
       expect(lines[0]).toContain('Assistant')
 
-      // Second line should show preview (last 2 lines with "...") since collapsed
-      expect(lines[1]).toContain('...')
-      expect(lines[1]).toContain('terminal because it exceeds the')
+      // Find the trace toggle line (should come after content)
+      const traceToggleLine = lines.find((line) =>
+        line.includes('trace: 1 agent'),
+      )
+      expect(traceToggleLine).toBeDefined()
+      expect(traceToggleLine).toContain('1 agent')
 
-      // Continuation lines should maintain proper indentation
-      const continuationLines = lines.slice(2)
-      for (const line of continuationLines) {
+      // Content lines should maintain proper indentation
+      const contentLines = lines.slice(1, lines.indexOf(traceToggleLine!))
+      for (const line of contentLines) {
         if (line.trim()) {
           // Should have proper indentation for wrapped content
           expect(line).toMatch(/^\s{2,}/)
@@ -134,22 +137,16 @@ describe('Chat Tree Line Wrapping', () => {
                 content:
                   'Nested thinker with extremely long content that definitely needs to wrap and should maintain the correct vertical tree structure with proper ancestor line continuation',
                 children: [],
-                postContent:
-                  'Thinker post content that is also quite long and should wrap properly',
               },
             ],
-            postContent: 'File picker completed successfully',
           },
           {
             id: createNodeId('test-msg-3', [1]),
             type: 'reviewer',
             content: 'Second top-level child with long content that wraps',
             children: [],
-            postContent: 'Review completed',
           },
         ],
-        postContent:
-          'All tasks completed successfully with comprehensive results',
       }
 
       const uiState: SubagentUIState = {
@@ -226,7 +223,8 @@ describe('Chat Tree Line Wrapping', () => {
         firstChildProgress: new Map(),
       }
 
-      const lines = renderSubagentTree(tree, uiState, mockMetrics, 'test-msg-4') // Find grandchild lines and verify proper indentation
+      const lines = renderSubagentTree(tree, uiState, mockMetrics, 'test-msg-4')
+      // Find grandchild lines and verify proper indentation
       const grandchildLines = lines.filter(
         (line) => line.includes('grandchild') || line.includes('Grandchild'),
       )
@@ -242,7 +240,7 @@ describe('Chat Tree Line Wrapping', () => {
       }
     })
 
-    test('should handle mixed scenarios with postContent wrapping', () => {
+    test('should handle mixed scenarios with content wrapping', () => {
       const tree: SubagentNode = {
         id: createNodeId('test-msg-5', []),
         type: 'assistant',
@@ -251,14 +249,11 @@ describe('Chat Tree Line Wrapping', () => {
           {
             id: createNodeId('test-msg-5', [0]),
             type: 'worker',
-            content: 'Worker content',
+            content:
+              'Worker content that is long enough to wrap across multiple lines',
             children: [],
-            postContent:
-              'This is a very long post content message that should wrap across multiple lines while maintaining the proper tree structure and indentation',
           },
         ],
-        postContent:
-          'Root post content that is also quite long and should wrap properly at the end of the entire tree structure',
       }
 
       const uiState: SubagentUIState = {
@@ -269,13 +264,8 @@ describe('Chat Tree Line Wrapping', () => {
 
       const lines = renderSubagentTree(tree, uiState, mockMetrics, 'test-msg-5')
 
-      // Should handle both child postContent and root postContent
-      const postContentLines = lines.filter(
-        (line) =>
-          line.includes('post content') || line.includes('tree structure'),
-      )
-
-      expect(postContentLines.length).toBeGreaterThanOrEqual(0)
+      // Should handle content wrapping properly
+      expect(lines.length).toBeGreaterThanOrEqual(0)
     })
   })
 

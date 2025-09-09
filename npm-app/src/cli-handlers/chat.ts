@@ -12,6 +12,7 @@ import {
   MOVE_CURSOR,
   SET_CURSOR_DEFAULT,
 } from '../utils/terminal'
+import { renderInlineTrace } from './chat-inline-trace'
 
 // Constants
 const SIDE_PADDING = 2
@@ -75,11 +76,11 @@ export interface SubagentNode {
   type: string
   content: string
   children: SubagentNode[]
-  postContent?: string
   status?: 'pending' | 'running' | 'complete' | 'error'
   statusMessage?: string
   startTime?: number
   endTime?: number
+  postContent?: string
 }
 
 export interface SubagentUIState {
@@ -322,26 +323,22 @@ function positionRealCursor(): void {
   }
 
   const metrics = getTerminalMetrics()
+  const maxContentLines = computeMaxContentLines(metrics)
 
-  // Position cursor at the input area where typing occurs
-  const inputAreaHeight = calculateInputAreaHeight(metrics)
-
-  // Calculate where the input area starts
-  let inputLinePosition = metrics.height - inputAreaHeight
+  // Calculate where the input area starts (after content area)
+  let inputRowPosition = maxContentLines + 1 // +1 for starting from 1
 
   // Skip queue preview line if present
   if (chatState.messageQueue.length > 0) {
-    inputLinePosition += 1
+    inputRowPosition += 1
   }
   // Skip separator line
-  inputLinePosition += 1
+  inputRowPosition += 1
 
-  // Now inputLinePosition points to the actual input line
+  // Now inputRowPosition points to the actual input line
   if (chatState.currentInput.length === 0) {
     // Position cursor at start of input area (after side padding)
-    process.stdout.write(
-      MOVE_CURSOR(inputLinePosition, metrics.sidePadding + 1),
-    )
+    process.stdout.write(MOVE_CURSOR(inputRowPosition, metrics.sidePadding + 1))
   } else {
     // Calculate cursor position within the input text
     const wrappedInputLines = wrapLine(
@@ -351,7 +348,7 @@ function positionRealCursor(): void {
     const lastLineIndex = wrappedInputLines.length - 1
     const lastLineLength = stringWidth(wrappedInputLines[lastLineIndex] || '')
 
-    const cursorRow = inputLinePosition + lastLineIndex
+    const cursorRow = inputRowPosition + lastLineIndex
     const cursorCol = metrics.sidePadding + 1 + lastLineLength
 
     process.stdout.write(MOVE_CURSOR(cursorRow, cursorCol))
@@ -370,7 +367,7 @@ export function enterChatBuffer(rl: any, onExit: () => void) {
 
   resetChatState()
 
-  // Enter alternate screen buffer
+  // Enter alternate screen buffer and clear completely
   process.stdout.write(ENTER_ALT_BUFFER)
   process.stdout.write(CLEAR_SCREEN)
   process.stdout.write(MOVE_CURSOR(1, 1))
@@ -386,7 +383,6 @@ export function enterChatBuffer(rl: any, onExit: () => void) {
   // Delay initial render to avoid flicker and ensure terminal is ready
   setTimeout(() => {
     addMessage('assistant', WELCOME_MESSAGE, true)
-    positionRealCursor()
   }, 50)
 }
 
@@ -491,107 +487,33 @@ export function renderAssistantMessage(
   metrics: TerminalMetrics,
   timeFormatter: Intl.DateTimeFormat,
 ): string[] {
+  // If message has subagent tree and UI state, use the new inline trace renderer
+  if (message.subagentTree && message.subagentUIState) {
+    return renderInlineTrace(
+      message.subagentTree,
+      message.subagentUIState,
+      metrics,
+      message.id,
+      timeFormatter,
+      message.timestamp,
+    )
+  }
+
+  // Otherwise, render simple assistant message without trace
   const lines: string[] = []
   const timeStr = timeFormatter.format(new Date(message.timestamp))
 
-  // Check if this message has any subagents
-  const hasSubagents =
-    message.subagentTree &&
-    message.subagentTree.children &&
-    message.subagentTree.children.length > 0
-  const hasPostContent =
-    message.subagentTree && message.subagentTree.postContent
-
-  // Determine expand/collapse state for the main message
-  const isMainExpanded =
-    hasSubagents &&
-    message.subagentUIState &&
-    message.subagentUIState.expanded.size > 0
-
-  // Check if any child subagent is expanded (for minimizing parent)
-  const hasExpandedChild =
-    hasSubagents &&
-    message.subagentUIState &&
-    Array.from(message.subagentUIState.expanded).some(
-      (nodeId) =>
-        nodeId !== createNodeId(message.id, []) &&
-        nodeId.startsWith(`m:${message.id}/`),
-    )
-
-  // Check if the main assistant toggle is focused
-  const mainToggleNodeId = createNodeId(message.id, []) + '/toggle'
-  const isMainToggleFocused =
-    message.subagentUIState?.focusNodeId === mainToggleNodeId
-
-  // Assistant messages: header with expand/collapse toggle if has subagents
-  let assistantHeader = ''
-  if (hasSubagents) {
-    const expandCollapseIndicator = isMainExpanded ? '[-]' : '[+]'
-    const toggleText = isMainToggleFocused
-      ? `\x1b[7m${expandCollapseIndicator}\x1b[27m` // Highlighted toggle
-      : expandCollapseIndicator // Regular toggle
-    assistantHeader = `${toggleText} ${bold(blue('Assistant'))} ${gray(`[${timeStr}]`)}`
-  } else {
-    assistantHeader = `${bold(blue('Assistant'))} ${gray(`[${timeStr}]`)}`
-  }
-
-  // If a child is expanded, add ellipsis on same line as header
-  if (hasExpandedChild) {
-    assistantHeader += ' ' + gray('...')
-  }
-
+  // Simple assistant header without toggles
+  const assistantHeader = `${bold(blue('Assistant'))} ${gray(`[${timeStr}]`)}`
   lines.push(' '.repeat(metrics.sidePadding) + assistantHeader)
 
-  // Only show content if no child is expanded
-  if (!hasExpandedChild && message.content && message.content.trim()) {
-    // Check if we should show only postContent (when collapsed and has postContent)
-    const isFullyCollapsed =
-      hasSubagents &&
-      message.subagentUIState &&
-      message.subagentUIState.expanded.size === 0
-    const hasPostContentToShow =
-      message.subagentTree && message.subagentTree.postContent
-    const shouldShowOnlyPostContent = isFullyCollapsed && hasPostContentToShow
-
-    if (!shouldShowOnlyPostContent) {
-      // Show preview or full content based on expansion state
-      const shouldShowPreview = hasSubagents && !isMainExpanded
-
-      if (shouldShowPreview) {
-        // Show preview - just the last 2 lines with "..." prefix for top-level assistant
-        const contentLines = message.content.split('\n')
-        const allWrappedLines: string[] = []
-
-        for (const line of contentLines) {
-          const wrapped = wrapLine(line, metrics.contentWidth)
-          allWrappedLines.push(...wrapped)
-        }
-
-        if (allWrappedLines.length <= 2) {
-          // If 2 lines or less, show all
-          allWrappedLines.forEach((line) => {
-            const indentedLine = line
-            appendWrappedLine(lines, indentedLine, 0, metrics, [], 0)
-          })
-        } else {
-          // Show last 2 lines with ellipsis prepended to first line
-          const lastLines = allWrappedLines.slice(-2)
-          lastLines.forEach((line, index) => {
-            const lineWithEllipsis = index === 0 ? gray('...') + line : line
-            appendWrappedLine(lines, lineWithEllipsis, 0, metrics, [], 0)
-          })
-        }
-      } else {
-        // Show full content when expanded or no subagents
-        const contentLines = message.content.split('\n')
-
-        contentLines.forEach((line) => {
-          const indentedLine = line // 0 spaces to match subagent indentation
-          const indentLevel = 0
-          appendWrappedLine(lines, indentedLine, indentLevel, metrics, [], 0)
-        })
-      }
-    }
+  // Show content
+  if (message.content && message.content.trim()) {
+    const contentLines = message.content.split('\n')
+    contentLines.forEach((line) => {
+      const indentedLine = line
+      appendWrappedLine(lines, indentedLine, 0, metrics, [], 0)
+    })
   }
 
   return lines
@@ -649,20 +571,7 @@ function updateContentLines() {
         lines.push(...renderUserMessage(message, metrics, timeFormatter))
       }
 
-      // Add subagent tree if this is an assistant message with a tree
-      if (
-        message.role === 'assistant' &&
-        message.subagentTree &&
-        message.subagentUIState
-      ) {
-        const treeLines = renderSubagentTree(
-          message.subagentTree,
-          message.subagentUIState,
-          metrics,
-          message.id,
-        )
-        lines.push(...treeLines)
-      }
+      // Note: subagent tree is now rendered inline within renderAssistantMessage
 
       if (index < chatState.messages.length - 1) {
         lines.push('') // Add spacing between messages
@@ -675,12 +584,6 @@ function updateContentLines() {
   lines.push('')
 
   chatState.contentLines = lines
-}
-
-function padLine(line: string, width: number): string {
-  const visibleWidth = stringWidth(line)
-  const padding = Math.max(0, width - visibleWidth)
-  return line + ' '.repeat(padding)
 }
 
 function renderChat() {
@@ -702,6 +605,9 @@ function renderChat() {
     // Don't reset userHasScrolled flag here - let user keep control
   }
 
+  // Clear screen and move to home position
+  process.stdout.write(CLEAR_SCREEN)
+
   // Build the complete screen content
   const screenLines: string[] = []
 
@@ -711,14 +617,14 @@ function renderChat() {
     chatState.scrollOffset + maxContentLines,
   )
 
-  // Pad visible lines to fill the available content area
+  // Add visible content lines
   for (let i = 0; i < maxContentLines; i++) {
     const line = visibleLines[i] || ''
-    screenLines.push(padLine(line, metrics.width))
+    screenLines.push(line)
   }
 
-  // Add input area lines
-  let currentLine = metrics.height - inputAreaHeight
+  // Add input area
+  const inputLines: string[] = []
 
   // Display queued message preview if there are queued messages
   if (chatState.messageQueue.length > 0) {
@@ -734,24 +640,21 @@ function renderChat() {
       metrics,
     )
     const queueLine = ' '.repeat(metrics.sidePadding) + gray(previewText)
-    screenLines.push(padLine(queueLine, metrics.width))
-    currentLine++
+    inputLines.push(queueLine)
   }
 
   // Display separator line
   const separatorContent =
     ' '.repeat(metrics.sidePadding) +
     gray(SEPARATOR_CHAR.repeat(metrics.contentWidth))
-  screenLines.push(padLine(separatorContent, metrics.width))
-  currentLine++
+  inputLines.push(separatorContent)
 
   // Show placeholder or user input
   if (chatState.currentInput.length === 0) {
     // Show placeholder text
     const placeholder = `\x1b[2m${gray(PLACEHOLDER_TEXT)}\x1b[22m`
     const placeholderContent = ' '.repeat(metrics.sidePadding) + placeholder
-    screenLines.push(padLine(placeholderContent, metrics.width))
-    currentLine++
+    inputLines.push(placeholderContent)
   } else {
     // Show user input
     const wrappedInputLines = wrapLine(
@@ -759,25 +662,30 @@ function renderChat() {
       metrics.contentWidth,
     )
 
-    wrappedInputLines.forEach((line, index) => {
+    wrappedInputLines.forEach((line) => {
       const inputContent = ' '.repeat(metrics.sidePadding) + line
-      screenLines.push(padLine(inputContent, metrics.width))
-      currentLine++
+      inputLines.push(inputContent)
     })
   }
 
-  // Pad remaining input area with empty lines, leaving one for the status bar
-  while (screenLines.length < metrics.height - 1) {
-    screenLines.push(' '.repeat(metrics.width))
-  }
+  // Add a blank line
+  inputLines.push('')
 
-  // Status line with side padding - position at very bottom of screen
+  // Status line with side padding
   const statusText = getStatusText(metrics)
   const statusContent = ' '.repeat(metrics.sidePadding) + gray(statusText)
-  screenLines.push(padLine(statusContent, metrics.width))
+  inputLines.push(statusContent)
 
-  // Write the entire screen content at once
-  process.stdout.write(MOVE_CURSOR(1, 1) + screenLines.join('\n'))
+  // Combine all content
+  const allLines = [...screenLines, ...inputLines]
+
+  // Write content line by line to avoid overflow
+  allLines.forEach((line, index) => {
+    if (index > 0) {
+      process.stdout.write('\n')
+    }
+    process.stdout.write(line)
+  })
 
   // Position the real cursor at input location
   positionRealCursor()
@@ -1011,8 +919,11 @@ async function streamTextToNodeProperty(
   if (!text) return
 
   // Track which node is currently streaming
-  if (property === 'content') {
-    chatState.currentlyStreamingNodeId = node.id
+  chatState.currentlyStreamingNodeId = node.id
+
+  // Clear postContent before streaming to prevent duplication
+  if (property === 'postContent') {
+    node.postContent = ''
   }
 
   const words = text.split(' ')
@@ -1020,14 +931,12 @@ async function streamTextToNodeProperty(
     const word = words[i]
     const isLastWord = i === words.length - 1
 
-    // No auto-collapse behavior when streaming postContent
-    // Keep expansion state as-is
-
     const chunk = (i === 0 ? '' : ' ') + word
-    if (property === 'postContent') {
-      node.postContent = (node.postContent || '') + chunk
-    } else {
+
+    if (property === 'content') {
       node.content += chunk
+    } else if (property === 'postContent') {
+      node.postContent = (node.postContent || '') + chunk
     }
 
     updateContentLines()
@@ -1038,98 +947,6 @@ async function streamTextToNodeProperty(
       await new Promise((resolve) => setTimeout(resolve, delay))
     }
   }
-}
-
-// Helper function to progressively stream and build subagent tree content
-async function streamSubagentTreeContent(
-  responseNode: any,
-  message: ChatMessage,
-  currentPath: number[],
-): Promise<{ node: SubagentNode; postContent: string }[]> {
-  if (!responseNode.children || responseNode.children.length === 0) {
-    return []
-  }
-
-  const allNodesWithPostContent: { node: SubagentNode; postContent: string }[] =
-    []
-
-  // First pass: Process all children content and create nodes
-  const childNodes: { node: SubagentNode; originalChild: any }[] = []
-
-  for (
-    let childIndex = 0;
-    childIndex < responseNode.children.length;
-    childIndex++
-  ) {
-    const child = responseNode.children[childIndex]
-    const childPath = [...currentPath, childIndex]
-
-    // Add a pause before starting each subagent
-    await new Promise((resolve) =>
-      setTimeout(resolve, 300 + Math.random() * 200),
-    )
-
-    // Create the child node in the tree (initially with empty content)
-    const childNode: SubagentNode = {
-      id: createNodeId(message.id, childPath),
-      type: child.agent || 'unknown',
-      content: '',
-      children: [],
-    }
-
-    // Add child to parent node in tree
-    if (currentPath.length === 0) {
-      // Top-level child
-      message.subagentTree!.children.push(childNode)
-    } else {
-      // Find parent node and add child
-      const parentNode = findNodeByPath(message.subagentTree!, currentPath)
-      if (parentNode) {
-        parentNode.children.push(childNode)
-      }
-    }
-
-    // Expand this node in UI
-    message.subagentUIState!.expanded.add(childNode.id)
-
-    // Trigger re-render to show the new subagent node (with empty content initially)
-    updateContentLines()
-    renderChat()
-
-    // Stream this child's content word-by-word
-    await streamTextToNodeProperty(childNode, 'content', child.content)
-
-    // Store for later processing
-    childNodes.push({ node: childNode, originalChild: child })
-  }
-
-  // Second pass: Process all children recursively (grandchildren)
-  for (let i = 0; i < childNodes.length; i++) {
-    const { node: childNode, originalChild: child } = childNodes[i]
-    const childPath = [...currentPath, i]
-
-    // Recursively process grandchildren and collect their postContent nodes
-    const descendantPostContentNodes = await streamSubagentTreeContent(
-      child,
-      message,
-      childPath,
-    )
-    allNodesWithPostContent.push(...descendantPostContentNodes)
-  }
-
-  // Third pass: After ALL descendants are processed, collect postContent from this level
-  for (const { node: childNode, originalChild: child } of childNodes) {
-    if (child.postContent) {
-      allNodesWithPostContent.push({
-        node: childNode,
-        postContent: child.postContent,
-      })
-    }
-  }
-
-  // Return collected postContent nodes without streaming them
-  // Only the top-level call will stream them
-  return allNodesWithPostContent
 }
 
 // Simulates streaming AI response with chunked updates
@@ -1341,8 +1158,7 @@ async function simulateStreamingResponse(
         type: 'assistant',
         content: selectedResponse.content,
         children: [],
-        postContent: selectedResponse.postContent,
-        status: 'complete',
+        status: 'running', // Start as running, will be marked complete after children finish
       }
       streamingMessage.subagentUIState = {
         expanded: new Set([createNodeId(streamingMessage.id, [])]), // Default assistant toggle to expanded
@@ -1352,6 +1168,23 @@ async function simulateStreamingResponse(
 
       // Execute subagent tree with status updates
       await executeSubagentTree(selectedResponse, streamingMessage, [])
+
+      // Stream root postContent after all children are complete
+      if (selectedResponse.postContent && streamingMessage.subagentTree) {
+        await new Promise((resolve) => setTimeout(resolve, 300))
+        await streamTextToNodeProperty(
+          streamingMessage.subagentTree,
+          'postContent',
+          selectedResponse.postContent,
+        )
+      }
+
+      // Mark root as complete after postContent streaming is finished
+      if (streamingMessage.subagentTree) {
+        streamingMessage.subagentTree.status = 'complete'
+        updateContentLines()
+        renderChat()
+      }
     }
   }
 }
@@ -1380,6 +1213,7 @@ async function simulateNodeExecution(
   node: SubagentNode,
   content: string,
   statusMessages: string[],
+  markComplete: boolean = true,
 ): Promise<void> {
   // Start with running status
   await updateNodeStatus(node, 'running', statusMessages[0] || 'Starting...')
@@ -1395,14 +1229,17 @@ async function simulateNodeExecution(
   // Store the full content but don't stream it
   node.content = content
 
-  // Mark as complete
-  await updateNodeStatus(node, 'complete', 'Done')
-  await new Promise((resolve) => setTimeout(resolve, 200))
-
-  // Clear status message after completion
-  node.statusMessage = ''
-  updateContentLines()
-  renderChat()
+  // Only mark as complete if requested (for backwards compatibility)
+  if (markComplete) {
+    await updateNodeStatus(node, 'complete', 'Done')
+    await new Promise((resolve) => setTimeout(resolve, 200))
+    node.statusMessage = ''
+    updateContentLines()
+    renderChat()
+  } else {
+    // Stay in running state for postContent streaming
+    await updateNodeStatus(node, 'running', 'Finalizing...')
+  }
 }
 
 // Helper function to progressively build and execute subagent tree
@@ -1417,7 +1254,9 @@ async function executeSubagentTree(
 
   // Process children in parallel groups for realistic execution
   const children = responseNode.children
+  const postContentQueue: { node: SubagentNode; content: string }[] = []
 
+  // First pass: Process all children and their descendants (no postContent streaming yet)
   for (let childIndex = 0; childIndex < children.length; childIndex++) {
     const child = children[childIndex]
     const childPath = [...currentPath, childIndex]
@@ -1428,7 +1267,6 @@ async function executeSubagentTree(
       type: child.agent || 'unknown',
       content: child.content || '',
       children: [],
-      postContent: child.postContent,
       status: 'pending',
       statusMessage: '',
     }
@@ -1445,21 +1283,37 @@ async function executeSubagentTree(
       }
     }
 
-    // Don't auto-expand during execution - keep view clean
-    // message.subagentUIState!.expanded.add(childNode.id)
-
     // Trigger re-render to show the new subagent node
     updateContentLines()
     renderChat()
 
-    // Execute this child with status updates
+    // Execute this child with status updates - but don't mark as complete yet
     const statusMessages = getStatusMessagesForAgent(child.agent)
-    await simulateNodeExecution(childNode, child.content, statusMessages)
+    await simulateNodeExecution(childNode, child.content, statusMessages, false) // false = don't mark complete
 
-    // Process grandchildren if any
+    // Process grandchildren if any (recursively) - this will also queue their postContent
     if (child.children && child.children.length > 0) {
       await executeSubagentTree(child, message, childPath)
     }
+
+    // Queue postContent for later streaming (depth-first order)
+    if (child.postContent) {
+      postContentQueue.push({ node: childNode, content: child.postContent })
+    }
+
+    // Mark as complete (but don't stream postContent yet)
+    await updateNodeStatus(childNode, 'complete', 'Done')
+    await new Promise((resolve) => setTimeout(resolve, 200))
+    childNode.statusMessage = ''
+    updateContentLines()
+    renderChat()
+  }
+
+  // Second pass: Stream all postContent in the correct order (children first, then parents)
+  for (const { node, content } of postContentQueue) {
+    // Short delay before streaming postContent
+    await new Promise((resolve) => setTimeout(resolve, 300))
+    await streamTextToNodeProperty(node, 'postContent', content)
   }
 }
 
@@ -1538,8 +1392,7 @@ export function renderSubagentTree(
     parentPath: number[] = [],
   ): void {
     const nodeId = createNodeId(messageId, path)
-    const hasChildren =
-      (node.children && node.children.length > 0) || !!node.postContent
+    const hasChildren = node.children && node.children.length > 0
     const isExpanded = uiState.expanded.has(nodeId)
 
     // Check if any sibling at this level is expanded
@@ -1648,24 +1501,6 @@ export function renderSubagentTree(
           )
         }
       })
-
-      // Show postContent at the same indentation if expanded and node is complete
-      if (
-        node.postContent &&
-        (node.status === 'complete' || node.status === undefined)
-      ) {
-        const postLines = node.postContent.split('\n')
-        postLines.forEach((line) => {
-          if (line.trim()) {
-            appendWrappedLine(
-              lines,
-              contentPrefix + gray(line),
-              stringWidth(contentPrefix),
-              metrics,
-            )
-          }
-        })
-      }
     }
 
     // Render children if expanded
@@ -1686,34 +1521,12 @@ export function renderSubagentTree(
         // Add spacing after the last child
         lines.push('')
       }
-    } else if (
-      !shouldMinimize &&
-      hasChildren &&
-      !isExpanded &&
-      node.postContent &&
-      (node.status === 'complete' || node.status === undefined)
-    ) {
-      // Show full postContent for collapsed nodes when the node itself is complete (unless minimized)
-      const postLines = node.postContent.split('\n')
-      const postIndentSpaces = 4 * depth
-      const postPrefix = ' '.repeat(postIndentSpaces)
-
-      postLines.forEach((line) => {
-        if (line.trim()) {
-          appendWrappedLine(
-            lines,
-            postPrefix + gray(line),
-            stringWidth(postPrefix),
-            metrics,
-          )
-        }
-      })
     }
   }
 
   // Check if the root assistant node is expanded (any node is expanded means root is expanded)
   const isRootExpanded = uiState.expanded.size > 0
-  
+
   // Only render children if the root assistant node is expanded
   if (isRootExpanded && tree.children && tree.children.length > 0) {
     tree.children.forEach((child, index) => {
@@ -1722,23 +1535,11 @@ export function renderSubagentTree(
       renderNode(child, 1, [index], isFirstChild, isLastChild, [])
     })
   } else if (!isRootExpanded) {
-    // Root is collapsed - show status or postContent
+    // Root is collapsed - show status only
     if (tree.status && tree.status !== 'complete') {
       // Show status message while running
       const statusMsg = tree.statusMessage || 'Processing...'
       appendWrappedLine(lines, gray(statusMsg), 0, metrics)
-    } else if (
-      tree.postContent &&
-      tree.status === 'complete' &&
-      allChildrenComplete(tree)
-    ) {
-      // Show full postContent only when the parent AND all children are complete
-      const postLines = tree.postContent.split('\n')
-      postLines.forEach((line) => {
-        if (line.trim()) {
-          appendWrappedLine(lines, bold(green(line)), 0, metrics)
-        }
-      })
     }
   }
 
@@ -1849,14 +1650,11 @@ function handleToggleAction(key: any): boolean {
 
     // Find the focused toggle line index before changes
     const oldToggleIndex = findFocusedToggleLineIndex(chatState.contentLines)
-    const screenRow = oldToggleIndex !== -1 ? oldToggleIndex - chatState.scrollOffset : -1
+    const screenRow =
+      oldToggleIndex !== -1 ? oldToggleIndex - chatState.scrollOffset : -1
 
     if (isExpanded) {
-      // Check if any descendants are currently streaming - if so, don't allow collapse
-      if (isAnyDescendantStreaming(actualNodeId, focusedMessage.id)) {
-        return true // Consume the key press but don't collapse
-      }
-
+      // Allow collapse even during streaming - users should be able to manage UI state
       // Collapse the node
       uiState.expanded.delete(actualNodeId)
       // Remove all descendant nodes from expanded set
@@ -1877,7 +1675,7 @@ function handleToggleAction(key: any): boolean {
     }
 
     updateContentLines()
-    
+
     // Restore scroll to keep focused toggle at same screen position
     if (screenRow !== -1) {
       const newToggleIndex = findFocusedToggleLineIndex(chatState.contentLines)
@@ -1887,7 +1685,7 @@ function handleToggleAction(key: any): boolean {
         chatState.userHasScrolled = true
       }
     }
-    
+
     renderChat()
     return true
   }
@@ -1930,14 +1728,13 @@ function handleArrowToggleAction(key: any): boolean {
       // Left arrow: close (collapse) if expanded, otherwise navigate to previous toggle
       if (isExpanded) {
         // Find the focused toggle line index before changes
-        const oldToggleIndex = findFocusedToggleLineIndex(chatState.contentLines)
-        const screenRow = oldToggleIndex !== -1 ? oldToggleIndex - chatState.scrollOffset : -1
-        
-        // Check if any descendants are currently streaming - if so, don't allow collapse
-        if (isAnyDescendantStreaming(actualNodeId, focusedMessage.id)) {
-          return true // Consume the key press but don't collapse
-        }
+        const oldToggleIndex = findFocusedToggleLineIndex(
+          chatState.contentLines,
+        )
+        const screenRow =
+          oldToggleIndex !== -1 ? oldToggleIndex - chatState.scrollOffset : -1
 
+        // Allow collapse even during streaming - users should be able to manage UI state
         uiState.expanded.delete(actualNodeId)
         // Remove all descendant nodes from expanded set
         const descendantPrefix = actualNodeId + '/'
@@ -1947,17 +1744,19 @@ function handleArrowToggleAction(key: any): boolean {
           }
         })
         updateContentLines()
-        
+
         // Restore scroll to keep focused toggle at same screen position
         if (screenRow !== -1) {
-          const newToggleIndex = findFocusedToggleLineIndex(chatState.contentLines)
+          const newToggleIndex = findFocusedToggleLineIndex(
+            chatState.contentLines,
+          )
           if (newToggleIndex !== -1) {
             const newScrollOffset = clampScroll(newToggleIndex - screenRow)
             chatState.scrollOffset = newScrollOffset
             chatState.userHasScrolled = true
           }
         }
-        
+
         renderChat()
       } else {
         // Already closed, navigate to previous toggle (like Shift+Tab)
@@ -1967,22 +1766,27 @@ function handleArrowToggleAction(key: any): boolean {
       // Right arrow: open (expand) if closed, otherwise navigate to next toggle
       if (!isExpanded) {
         // Find the focused toggle line index before changes
-        const oldToggleIndex = findFocusedToggleLineIndex(chatState.contentLines)
-        const screenRow = oldToggleIndex !== -1 ? oldToggleIndex - chatState.scrollOffset : -1
-        
+        const oldToggleIndex = findFocusedToggleLineIndex(
+          chatState.contentLines,
+        )
+        const screenRow =
+          oldToggleIndex !== -1 ? oldToggleIndex - chatState.scrollOffset : -1
+
         uiState.expanded.add(actualNodeId)
         updateContentLines()
-        
+
         // Restore scroll to keep focused toggle at same screen position
         if (screenRow !== -1) {
-          const newToggleIndex = findFocusedToggleLineIndex(chatState.contentLines)
+          const newToggleIndex = findFocusedToggleLineIndex(
+            chatState.contentLines,
+          )
           if (newToggleIndex !== -1) {
             const newScrollOffset = clampScroll(newToggleIndex - screenRow)
             chatState.scrollOffset = newScrollOffset
             chatState.userHasScrolled = true
           }
         }
-        
+
         renderChat()
       } else {
         // Already open, navigate to next toggle (like Tab)
@@ -2032,6 +1836,7 @@ function getAllNavigationTargets(): Array<{
         message.subagentTree.children &&
         message.subagentTree.children.length > 0
       if (hasSubagents) {
+        // Main trace toggle (the "View trace" toggle)
         const mainToggleNodeId = createNodeId(message.id, []) + '/toggle'
         targets.push({
           messageId: message.id,
@@ -2039,16 +1844,19 @@ function getAllNavigationTargets(): Array<{
           depth: 0,
           type: 'toggle',
         })
-      }
 
-      // Collect toggle nodes from this message's tree
-      collectToggleNodesFromTree(
-        message.subagentTree,
-        message.id,
-        message.subagentUIState,
-        targets,
-        1, // Start at depth 1 since main assistant is depth 0
-      )
+        // Only collect child toggles if the main trace is expanded
+        const mainNodeId = createNodeId(message.id, [])
+        if (message.subagentUIState.expanded.has(mainNodeId)) {
+          collectToggleNodesFromTree(
+            message.subagentTree,
+            message.id,
+            message.subagentUIState,
+            targets,
+            1, // Start at depth 1 since main assistant is depth 0
+          )
+        }
+      }
     }
   })
 
@@ -2095,14 +1903,13 @@ function collectToggleNodesFromTree(
     node.children.forEach((child, index) => {
       const childPath = [...path, index]
       const childNodeId = createNodeId(messageId, childPath)
-      const childHasChildren =
-        (child.children && child.children.length > 0) || !!child.postContent
 
-      // Only add toggle if this child has children AND this node is currently expanded (making child visible)
+      // Check if this node is currently expanded (making child visible)
       const nodeId = createNodeId(messageId, path)
       const isNodeExpanded = uiState.expanded.has(nodeId)
 
-      if (childHasChildren && isNodeExpanded) {
+      // All child nodes get toggles, not just those with children
+      if (isNodeExpanded) {
         const toggleNodeId = childNodeId + '/toggle'
         targets.push({ messageId, nodeId: toggleNodeId, depth, type: 'toggle' })
       }
@@ -2281,7 +2088,6 @@ function buildSubagentTree(mockResponse: any): SubagentNode {
       type: node.agent || 'unknown',
       content: node.content || '',
       children,
-      postContent: node.postContent,
       status: 'pending',
       statusMessage: '',
     }
@@ -2313,7 +2119,7 @@ function allChildrenComplete(node: SubagentNode): boolean {
   return true
 }
 
-function formatNodeStatus(node: SubagentNode): string {
+export function formatNodeStatus(node: SubagentNode): string {
   const now = Date.now()
   let timeStr = ''
 
@@ -2340,21 +2146,37 @@ function formatNodeStatus(node: SubagentNode): string {
   }
 
   let statusText = ''
-  switch (node.status) {
-    case 'pending':
-      statusText = gray('[Pending]')
-      break
-    case 'running':
-      statusText = yellow(`[Running ${timeStr}]`)
-      break
-    case 'complete':
-      statusText = green(`[OK ${timeStr}]`)
-      break
-    case 'error':
-      statusText = red(`[Error ${timeStr}]`)
-      break
-    default:
-      statusText = ''
+
+  // If node has children and any child/descendant is not complete, show running status
+  if (node.children && node.children.length > 0 && !allChildrenComplete(node)) {
+    // Pulsing yellow frame for running with 8-frame animation
+    const PULSE_FRAMES = ['○', '◔', '◑', '◕', '●', '◕', '◑', '◔']
+    const frame = Math.floor(Date.now() / 1000) % PULSE_FRAMES.length // Pulse every 1000ms (1 second)
+    const pulseChar = PULSE_FRAMES[frame]
+    statusText = yellow(`${pulseChar} ${timeStr}`)
+  } else {
+    switch (node.status) {
+      case 'pending':
+        statusText = gray('○')
+        break
+      case 'running':
+        // Pulsing yellow frame for running with 8-frame animation
+        const PULSE_FRAMES = ['○', '◔', '◑', '◕', '●', '◕', '◑', '◔']
+        const frame = Math.floor(Date.now() / 1000) % PULSE_FRAMES.length // Pulse every 1000ms (1 second)
+        const pulseChar = PULSE_FRAMES[frame]
+        statusText = yellow(`${pulseChar} ${timeStr}`)
+        break
+      case 'complete':
+        // Solid green frame for complete
+        statusText = green(`● ${timeStr}`)
+        break
+      case 'error':
+        // Solid red frame for error
+        statusText = red(`● ${timeStr}`)
+        break
+      default:
+        statusText = ''
+    }
   }
 
   return statusText
