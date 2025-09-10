@@ -29,5 +29,8 @@
   "devDependencies": {
     "@types/node": "22",
     "@types/bun": "^1.2.11"
+  },
+  "dependencies": {
+    "string-width": "^8.1.0"
   }
 }

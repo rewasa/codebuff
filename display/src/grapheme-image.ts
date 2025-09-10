@@ -1,5 +1,6 @@
 import GraphemeSplitter from 'grapheme-splitter'
 import { isEqual } from 'lodash'
+import stringWidth from 'string-width'
 import stripAnsi from 'strip-ansi'
 
 import {
@@ -11,6 +12,7 @@ import {
   moveCursor,
 } from './ansi'
 
+export const BLANK_GRAPHEME = ' ' as $GraphemeString
 type $GraphemeString = string & { readonly _brand: 'GraphemeString' }
 
 export type Grapheme = {
@@ -28,10 +30,15 @@ export function toGraphemeString(grapheme: string): $GraphemeString {
   const stripped = stripAnsi(grapheme)
   const numGraphemes = splitter.countGraphemes(stripped)
   if (numGraphemes === 0) {
-    return ' ' as $GraphemeString
+    return BLANK_GRAPHEME
   }
 
-  return splitter.iterateGraphemes(stripped).next().value as $GraphemeString
+  const first = splitter.iterateGraphemes(stripped).next()
+    .value as $GraphemeString
+  if (stringWidth(first) < 1) {
+    return BLANK_GRAPHEME
+  }
+  return first
 }
 
 function equalStyles(a: Grapheme, b: Grapheme): boolean {
