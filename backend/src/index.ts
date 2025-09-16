@@ -11,6 +11,7 @@ import {
   relabelForUserHandler,
 } from './admin/relabelRuns'
 import { validateAgentNameHandler } from './api/agents'
+import { completionsStreamHandler } from './api/chat/completions'
 import { isRepoCoveredHandler } from './api/org'
 import usageHandler from './api/usage'
 import { checkAdmin } from './util/check-auth'
@@ -37,6 +38,7 @@ app.get('/healthz', (req, res) => {
   res.send('ok')
 })
 
+app.post('/api/chat/completions', completionsStreamHandler)
 app.post('/api/usage', usageHandler)
 app.post('/api/orgs/is-repo-covered', isRepoCoveredHandler)
 app.get('/api/agents/validate-name', validateAgentNameHandler)
