@@ -10,6 +10,7 @@ import {
   type Modifier,
   ansiCode,
   moveCursor,
+  STYLE,
 } from './ansi'
 
 export const BLANK_GRAPHEME = ' ' as $GraphemeString
@@ -108,7 +109,7 @@ function graphemeDiffCommands(
   }
 
   return [
-    ...ansiCode({ type: 'style', style: 'RESET' }),
+    ...ansiCode({ type: 'style', style: STYLE.RESET }),
     ...graphemeCommands(newGrapheme),
   ]
 }
@@ -148,10 +149,8 @@ export function diffImageCommands(
     for (const [c, newGrapheme] of newRow.entries()) {
       const prevFrameGrapheme = oldRow[c]
       if (
-        isEqual(
-          { textStyles: [], ...newGrapheme },
-          { textStyles: [], ...prevFrameGrapheme },
-        )
+        newGrapheme.grapheme === prevFrameGrapheme.grapheme &&
+        equalStyles(newGrapheme, prevFrameGrapheme)
       ) {
         skipped = true
         continue

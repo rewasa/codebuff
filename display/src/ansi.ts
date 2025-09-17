@@ -78,7 +78,12 @@ export const STYLES = [
   ...BACKGROUND_COLOR_LIST,
 ] as const
 export type Style = (typeof STYLES)[number]
-export const STYLE = {
+export const STYLE = Object.fromEntries(
+  STYLES.map((style) => [style, style]),
+) as {
+  [K in Style]: K
+}
+const STYLE_CODE = {
   RESET: 0,
   BOLD: 1,
   DIM: 2,
@@ -132,7 +137,7 @@ export function ansiCode(
     | { type: 'text' | 'background'; rgb: RGB },
 ): string {
   if (data.type === 'style') {
-    return `\x1b[${STYLE[data.style]}m`
+    return `\x1b[${STYLE_CODE[data.style]}m`
   }
 
   if (some(data.rgb, (v) => v > 255 || v < 0)) {
