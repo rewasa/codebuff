@@ -1,5 +1,5 @@
 {
-  "name": "@codebuff/display",
+  "name": "@codebuff/cli",
   "version": "0.0.0",
   "private": true,
   "license": "UNLICENSED",
@@ -26,12 +26,12 @@
   "engines": {
     "bun": ">=1.2.11"
   },
+  "dependencies": {
+    "@codebuff/display": "workspace:*",
+    "@codebuff/sdk": "workspace:*"
+  },
   "devDependencies": {
     "@types/node": "22",
     "@types/bun": "^1.2.11"
-  },
-  "dependencies": {
-    "grapheme-splitter": "^1.0.4",
-    "string-width": "^8.1.0"
   }
 }

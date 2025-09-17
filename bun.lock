@@ -73,6 +73,18 @@
         "@types/ws": "^8.5.5",
       },
     },
+    "cli": {
+      "name": "@codebuff/cli",
+      "version": "0.0.0",
+      "dependencies": {
+        "@codebuff/display": "workspace:*",
+        "@codebuff/sdk": "workspace:*",
+      },
+      "devDependencies": {
+        "@types/bun": "^1.2.11",
+        "@types/node": "22",
+      },
+    },
     "common": {
       "name": "@codebuff/common",
       "version": "1.0.0",
@@ -103,6 +115,7 @@
       "name": "@codebuff/display",
       "version": "0.0.0",
       "dependencies": {
+        "grapheme-splitter": "^1.0.4",
         "string-width": "^8.1.0",
       },
       "devDependencies": {
@@ -589,6 +602,8 @@
     "@codebuff/billing": ["@codebuff/billing@workspace:packages/billing"],
 
     "@codebuff/build-tools": ["@codebuff/build-tools@workspace:packages/build-tools"],
+
+    "@codebuff/cli": ["@codebuff/cli@workspace:cli"],
 
     "@codebuff/code-map": ["@codebuff/code-map@workspace:packages/code-map"],
 
@@ -2325,6 +2340,8 @@
     "graceful-fs": ["graceful-fs@4.2.11", "", {}, "sha512-RbJ5/jmFcNNCcDV5o9eTnBLJ/HszWV0P73bc+Ff4nS/rJj+YaS6IGyiOL0VoBYX+l1Wrl3k63h/KrH+nhJ0XvQ=="],
 
     "gradient-string": ["gradient-string@2.0.2", "", { "dependencies": { "chalk": "^4.1.2", "tinygradient": "^1.1.5" } }, "sha512-rEDCuqUQ4tbD78TpzsMtt5OIf0cBCSDWSJtUDaF6JsAh+k0v9r++NzxNEG87oDZx9ZwGhD8DaezR2L/yrw0Jdw=="],
+
+    "grapheme-splitter": ["grapheme-splitter@1.0.4", "", {}, "sha512-bzh50DW9kTPM00T8y4o8vQg89Di9oLJVLW/KaOGIXJWP/iqCN6WKYkbNOF04vFLJhwcpYUh9ydh/+5vpOqV4YQ=="],
 
     "graphemer": ["graphemer@1.4.0", "", {}, "sha512-EtKwoO6kxCL9WO5xipiHTZlSzBm7WLT627TqC/uVRd0HKmq8NXyebnNYxDoBi7wt8eTWrUrKXCOVaFq9x1kgag=="],
 

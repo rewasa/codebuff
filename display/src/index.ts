@@ -1,4 +1,3 @@
 export * from './ansi'
+export * from './grapheme-image'
 export * from './image-renderer'
-
-export type * from './grapheme-image'

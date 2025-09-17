@@ -44,9 +44,9 @@ export function toGraphemeString(grapheme: string): $GraphemeString {
 function equalStyles(a: Grapheme, b: Grapheme): boolean {
   type GraphemeStyle = Omit<Grapheme, 'grapheme'> &
     Partial<Pick<Grapheme, 'grapheme'>>
-  const aStyles: GraphemeStyle = { ...a }
+  const aStyles: GraphemeStyle = { textStyles: [], ...a }
   delete aStyles.grapheme
-  const bStyles: GraphemeStyle = { ...b }
+  const bStyles: GraphemeStyle = { textStyles: [], ...b }
   delete bStyles.grapheme
   return isEqual(aStyles, bStyles)
 }
@@ -141,13 +141,18 @@ export function diffImageCommands(
   }
 
   const commands: string[] = []
-  let prevGrapheme: Grapheme | null = null
-  let skipped = false
-  for (const [r, row] of oldImage.entries()) {
+  let prevWrittenGrapheme: Grapheme | null = null
+  let skipped = true
+  for (const [r, newRow] of newImage.entries()) {
     const oldRow = oldImage[r]
-    for (const [c, grapheme] of row.entries()) {
-      const oldGrapheme = oldRow[c]
-      if (isEqual(grapheme, oldGrapheme)) {
+    for (const [c, newGrapheme] of newRow.entries()) {
+      const prevFrameGrapheme = oldRow[c]
+      if (
+        isEqual(
+          { textStyles: [], ...newGrapheme },
+          { textStyles: [], ...prevFrameGrapheme },
+        )
+      ) {
         skipped = true
         continue
       }
@@ -157,8 +162,8 @@ export function diffImageCommands(
         skipped = false
       }
 
-      commands.push(...graphemeDiffCommands(prevGrapheme, grapheme))
-      prevGrapheme = grapheme
+      commands.push(...graphemeDiffCommands(prevWrittenGrapheme, newGrapheme))
+      prevWrittenGrapheme = newGrapheme
     }
   }
   return commands

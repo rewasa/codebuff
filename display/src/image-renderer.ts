@@ -126,8 +126,8 @@ export class Renderer {
     const frame = this.getFrame(this.stdout.rows, this.stdout.columns)
 
     const now = Date.now()
-    // dt / 1000 < 1 / refreshAllFps
-    if ((now - this.lastFullRefreshTime) * this.refreshAllFps < 1000) {
+    // dt / 1000 > 1 / refreshAllFps
+    if ((now - this.lastFullRefreshTime) * this.refreshAllFps > 1000) {
       renderAll = true
     }
 
@@ -140,6 +140,7 @@ export class Renderer {
     } else {
       commands.push(HIDE_CURSOR)
     }
+    this.lastRefreshTime = Date.now()
     if (renderAll) {
       this.lastFullRefreshTime = Date.now()
     }
@@ -163,15 +164,14 @@ export class Renderer {
     }
 
     const now = Date.now()
-    // dt / 1000 < 1 / fps
-    if ((now - this.lastRefreshTime) * this.fps < 1000) {
-      this.forceRenderFrame(renderAll)
+    if (this.timer) {
       return
     }
-
+    // dt / 1000 < 1 / fps
+    const timeToWait = Math.max(this.lastRefreshTime + 1000 / this.fps - now, 0)
     this.timer = setTimeout(() => {
       this.forceRenderFrame(renderAll)
-    }, now - this.lastRefreshTime)
+    }, timeToWait)
   }
 
   public exit() {

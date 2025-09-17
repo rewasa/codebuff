@@ -2,7 +2,7 @@ import { some } from 'lodash'
 
 export const RESET = 'RESET' as const
 
-export const MODIFIERS = [
+export const MODIFIER_LIST = [
   'BOLD',
   'DIM',
   'ITALIC',
@@ -14,9 +14,14 @@ export const MODIFIERS = [
   'STRIKETHROUGH',
   'DOUBLE_UNDERLINE',
 ] as const
-export type Modifier = (typeof MODIFIERS)[number]
+export type Modifier = (typeof MODIFIER_LIST)[number]
+export const MODIFIER = Object.fromEntries(
+  MODIFIER_LIST.map((modifier) => [modifier, modifier]),
+) as {
+  [K in Modifier]: K
+}
 
-export const COLORS = [
+export const COLOR_LIST = [
   'BLACK',
   'RED',
   'GREEN',
@@ -34,9 +39,14 @@ export const COLORS = [
   'BRIGHT_CYAN',
   'BRIGHT_WHITE',
 ] as const
-export type Color = (typeof COLORS)[number]
+export type Color = (typeof COLOR_LIST)[number]
+export const COLOR = Object.fromEntries(
+  COLOR_LIST.map((color) => [color, color]),
+) as {
+  [K in Color]: K
+}
 
-export const BACKGROUND_COLORS = [
+export const BACKGROUND_COLOR_LIST = [
   'BG_BLACK',
   'BG_RED',
   'BG_GREEN',
@@ -54,13 +64,18 @@ export const BACKGROUND_COLORS = [
   'BG_BRIGHT_CYAN',
   'BG_BRIGHT_WHITE',
 ] as const
-export type BackgroundColor = (typeof BACKGROUND_COLORS)[number]
+export type BackgroundColor = (typeof BACKGROUND_COLOR_LIST)[number]
+export const BACKGROUND_COLOR = Object.fromEntries(
+  BACKGROUND_COLOR_LIST.map((color) => [color, color]),
+) as {
+  [K in BackgroundColor]: K
+}
 
 export const STYLES = [
   RESET,
-  ...MODIFIERS,
-  ...COLORS,
-  ...BACKGROUND_COLORS,
+  ...MODIFIER_LIST,
+  ...COLOR_LIST,
+  ...BACKGROUND_COLOR_LIST,
 ] as const
 export type Style = (typeof STYLES)[number]
 export const STYLE = {
@@ -134,7 +149,7 @@ export function ansiCode(
 }
 
 export function moveCursor(row: number, column: number): string {
-  return `\x1b[${row};${column}H`
+  return `\x1b[${row + 1};${column + 1}H`
 }
 
 export const HIDE_CURSOR = '\x1b[?25l'

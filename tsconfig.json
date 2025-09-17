@@ -4,31 +4,35 @@
     "noEmit": true, // don't place JS everywhere while hacking
     "baseUrl": ".", // Bun & editors see the aliases
     "paths": {
-      "@codebuff/display/*": ["./display/*"],
-      "@codebuff/common/*": ["./common/src/*"],
       "@codebuff/backend/*": ["./backend/src/*"],
-      "@codebuff/web/*": ["./web/src/*"],
+      "@codebuff/cli/*": ["./cli/src/*"],
+      "@codebuff/common/*": ["./common/src/*"],
+      "@codebuff/display/*": ["./display/src/*"],
       "@codebuff/evals/*": ["./evals/*"],
-      "@codebuff/sdk/*": ["./sdk/*"],
-      "@codebuff/billing/*": ["./packages/billing/src/*"],
+
       "@codebuff/bigquery/*": ["./packages/bigquery/src/*"],
+      "@codebuff/billing/*": ["./packages/billing/src/*"],
+      "@codebuff/code-map/*": ["./packages/code-map/*"],
       "@codebuff/internal/*": ["./packages/internal/src/*"],
-      "@codebuff/code-map/*": ["./packages/code-map/*"]
+
+      "@codebuff/sdk/*": ["./sdk/*"],
+      "@codebuff/web/*": ["./web/src/*"]
     }
   },
   "files": [],
   "references": [
-    { "path": "./display" },
-    { "path": "./common" },
     { "path": "./backend" },
-    { "path": "./npm-app" },
-    { "path": "./web" },
+    { "path": "./cli" },
+    { "path": "./common" },
+    { "path": "./display" },
     { "path": "./evals" },
-    { "path": "./sdk" },
+    { "path": "./npm-app" },
     { "path": "./packages/billing" },
     { "path": "./packages/bigquery" },
     { "path": "./packages/internal" },
     { "path": "./packages/code-map" },
-    { "path": "./scripts" }
+    { "path": "./sdk" },
+    { "path": "./scripts" },
+    { "path": "./web" }
   ]
 }
