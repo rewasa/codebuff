@@ -31,7 +31,6 @@
     "@types/bun": "^1.2.11"
   },
   "dependencies": {
-    "grapheme-splitter": "^1.0.4",
-    "string-width": "^8.1.0"
+    "grapheme-splitter": "^1.0.4"
   }
 }
