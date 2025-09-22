@@ -2,6 +2,7 @@ import { handleStrReplace } from './handlers/tool/str-replace'
 import { getFileProcessingValues } from './handlers/tool/write-file'
 import { logger } from '../util/logger'
 import { Benchify } from 'benchify'
+import { env } from '@codebuff/internal/env'
 import type { CodebuffToolCall } from '@codebuff/common/tools/list'
 import type { ToolResultPart } from '@codebuff/common/types/messages/content-part'
 import type { PrintModeEvent } from '@codebuff/common/types/print-mode'
@@ -247,7 +248,7 @@ async function callBenchify(
   )
 
   const client = new Benchify({
-    apiKey: process.env['BENCHIFY_API_KEY'], // This is the default and can be omitted
+    apiKey: env.BENCHIFY_API_KEY, // This is the default and can be omitted
   })
 
   const response = await client.runFixer(editedFiles, {
