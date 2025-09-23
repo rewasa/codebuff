@@ -311,6 +311,17 @@ Example: `bun run exec -- bun --cwd backend dev`
 
 Environment variables are defined and validated in `packages/internal/src/env.ts`. This module provides type-safe `env` objects for use throughout the monorepo.
 
+### OpenRouter Lite Free Mode
+
+Set to prefer OpenRouter free models when using base-lite:
+- OPENROUTER_LITE_FREE_ENABLED=true
+- OPENROUTER_LITE_FREE_MODEL=x-ai/grok-4-fast:free (optional; default is this value)
+
+Behavior:
+- Applies only to base-lite agents
+- If the current model already has ':free', no change
+- Fallback: when disabled or not base-lite, existing model routing remains unchanged
+
 ### Bun Wrapper Script
 
 The `.bin/bun` script automatically wraps bun commands with infisical when secrets are needed. It prevents nested infisical calls by checking for `NEXT_PUBLIC_INFISICAL_UP` environment variable, ensuring infisical runs only once at the top level while nested bun commands inherit the environment variables.

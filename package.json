@@ -16,9 +16,9 @@
     ".agents"
   ],
   "scripts": {
-    "dev": "bash scripts/dev.sh",
+    "dev": "bash scripts/codebuff-dev.sh start-bin",
     "start-db": "bun --cwd common db:start",
-    "start-bin": "bun --cwd npm-app start-bin",
+    "start-bin": "cd npm-app && bun run build && ./bin/codebuff",
     "start-web": "bun start-db && bun --cwd web dev",
     "start-studio": "bun --cwd common db:studio",
     "start-server": "bun --cwd backend dev",

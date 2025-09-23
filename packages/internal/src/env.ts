@@ -12,6 +12,9 @@ const envSchema = {
     CODEBUFF_API_KEY: z.string().optional(),
     BENCHIFY_API_KEY: z.string().optional(),
     OPEN_ROUTER_API_KEY: z.string().min(1),
+    // Optional: toggle OpenRouter free model in lite mode
+    OPENROUTER_LITE_FREE_ENABLED: z.string().optional(),
+    OPENROUTER_LITE_FREE_MODEL: z.string().optional(),
     RELACE_API_KEY: z.string().min(1),
     LINKUP_API_KEY: z.string().min(1),
     CONTEXT7_API_KEY: z.string().optional(),
@@ -55,6 +58,9 @@ const envSchema = {
     CODEBUFF_API_KEY: process.env.CODEBUFF_API_KEY,
     BENCHIFY_API_KEY: process.env.BENCHIFY_API_KEY,
     OPEN_ROUTER_API_KEY: process.env.OPEN_ROUTER_API_KEY,
+    // Lite free override envs
+    OPENROUTER_LITE_FREE_ENABLED: process.env.OPENROUTER_LITE_FREE_ENABLED,
+    OPENROUTER_LITE_FREE_MODEL: process.env.OPENROUTER_LITE_FREE_MODEL,
     RELACE_API_KEY: process.env.RELACE_API_KEY,
     LINKUP_API_KEY: process.env.LINKUP_API_KEY,
     CONTEXT7_API_KEY: process.env.CONTEXT7_API_KEY,

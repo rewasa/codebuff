@@ -1,16 +1,10 @@
-import { getErrorObject } from '@codebuff/common/util/error'
+import { logger } from '@codebuff/common/util/logger'
 import { BigQuery } from '@google-cloud/bigquery'
 
-import { MESSAGE_SCHEMA, RELABELS_SCHEMA, TRACES_SCHEMA } from './schema'
+import { MockBigQuery } from './mock-client'
+import { RELABELS_SCHEMA, TRACES_SCHEMA } from './schema'
 
-import type {
-  BaseTrace,
-  GetRelevantFilesTrace,
-  MessageRow,
-  Relabel,
-  Trace,
-} from './schema'
-import type { Logger } from '@codebuff/common/types/contracts/logger'
+import type { BaseTrace, GetRelevantFilesTrace, Relabel, Trace } from './schema'
 
 const DATASET =
   process.env.NEXT_PUBLIC_CB_ENVIRONMENT === 'prod'
@@ -19,7 +13,6 @@ const DATASET =
 
 const TRACES_TABLE = 'traces'
 const RELABELS_TABLE = 'relabels'
-const MESSAGE_TABLE = 'message'
 
 // Create a single BigQuery client instance to be used by all functions
 let client: BigQuery | null = null
@@ -33,18 +26,10 @@ function getClient(): BigQuery {
   return client
 }
 
-export async function setupBigQuery({
-  dataset = DATASET,
-  logger,
-}: {
-  dataset?: string
-  logger: Logger
-}) {
-  if (client) {
-    return
-  }
+export async function setupBigQuery(dataset: string = DATASET) {
   try {
-    client = new BigQuery()
+    // Use mock client for local development
+    client = process.env.DISABLE_GOOGLE_CLOUD === 'true' ? new MockBigQuery() : new BigQuery()
 
     // Ensure dataset exists
     const [ds] = await client.dataset(dataset).get({ autoCreate: true })
@@ -72,17 +57,6 @@ export async function setupBigQuery({
         fields: ['user_id', 'agent_step_id'],
       },
     })
-    await ds.table(MESSAGE_TABLE).get({
-      autoCreate: true,
-      schema: MESSAGE_SCHEMA,
-      timePartitioning: {
-        type: 'MONTH',
-        field: 'finished_at',
-      },
-      clustering: {
-        fields: ['user_id'],
-      },
-    })
   } catch (error) {
     logger.error(
       {
@@ -99,48 +73,7 @@ export async function setupBigQuery({
   }
 }
 
-export async function insertMessage({
-  row,
-  dataset = DATASET,
-  logger,
-}: {
-  row: MessageRow
-  dataset?: string
-  logger: Logger
-}) {
-  try {
-    await getClient()
-      .dataset(dataset)
-      .table(MESSAGE_TABLE)
-      .insert({ ...row, request: JSON.stringify(row.request) })
-
-    logger.debug(
-      {
-        ...row,
-        request: undefined,
-      },
-      'Inserted message into BigQuery',
-    )
-    return true
-  } catch (error) {
-    logger.error(
-      { error: getErrorObject(error), messageId: row.id },
-      'Failed to insert message into BigQuery',
-    )
-
-    return false
-  }
-}
-
-export async function insertTrace({
-  trace,
-  dataset = DATASET,
-  logger,
-}: {
-  trace: Trace
-  dataset?: string
-  logger: Logger
-}) {
+export async function insertTrace(trace: Trace, dataset: string = DATASET) {
   try {
     // Create a copy of the trace and stringify payload if needed
     const traceToInsert = {
@@ -167,15 +100,10 @@ export async function insertTrace({
   }
 }
 
-export async function insertRelabel({
-  relabel,
-  dataset = DATASET,
-  logger,
-}: {
-  relabel: Relabel
-  dataset?: string
-  logger: Logger
-}) {
+export async function insertRelabel(
+  relabel: Relabel,
+  dataset: string = DATASET,
+) {
   try {
     // Stringify payload if needed
     const relabelToInsert = {
