@@ -11,6 +11,7 @@ import {
 import { getAllFilePaths } from '@codebuff/common/project-file-tree'
 import { and, eq } from 'drizzle-orm'
 import { range, shuffle, uniq } from 'lodash'
+import { env } from '@codebuff/internal/env'
 
 import { CustomFilePickerConfigSchema } from './custom-file-picker-config'
 import { promptFlashWithFallbacks } from '../llm-apis/gemini-with-fallbacks'
@@ -344,7 +345,7 @@ async function getRelevantFiles(
   let response = await promptFlashWithFallbacks(codebuffMessages, {
     clientSessionId,
     userInputId,
-    model: models.openrouter_gemini2_5_flash,
+    model: (env.OPENROUTER_LITE_FREE_ENABLED === 'true' ? (env.OPENROUTER_LITE_FREE_MODEL || 'x-ai/grok-4-fast:free') : models.openrouter_gemini2_5_flash),
     userId,
     useFinetunedModel: finetunedModel,
     fingerprintId,
@@ -414,7 +415,7 @@ async function getRelevantFilesForTraining(
     clientSessionId,
     fingerprintId,
     userInputId,
-    model: models.openrouter_claude_sonnet_4,
+    model: (env.OPENROUTER_LITE_FREE_ENABLED === 'true' ? (env.OPENROUTER_LITE_FREE_MODEL || 'x-ai/grok-4-fast:free') : models.openrouter_claude_sonnet_4),
     userId,
     chargeUser: false,
   })
