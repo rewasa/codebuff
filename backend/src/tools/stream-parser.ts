@@ -8,6 +8,7 @@ import { buildArray } from '@codebuff/common/util/array'
 import { generateCompactId } from '@codebuff/common/util/string'
 
 import { expireMessages } from '../util/messages'
+import { logger } from '../util/logger'
 import { sendAction } from '../websockets/websocket-action'
 import { processStreamWithTags } from '../xml-stream-parser'
 import { executeCustomToolCall, executeToolCall } from './tool-executor'
@@ -116,6 +117,18 @@ export async function processStreamWithTools(options: {
     return {
       onTagStart: () => {},
       onTagEnd: async (_: string, input: Record<string, string>) => {
+        logger.debug(
+          {
+            toolName,
+            input: Object.keys(input),
+            agentStepId,
+            userInputId,
+            strReplacePhaseComplete: batchState.strReplacePhaseComplete,
+            deferredStrReplacesCount: batchState.deferredStrReplaces.length,
+          },
+          `toolCallback: onTagEnd for ${toolName}`,
+        )
+
         // Two-phase execution: defer str_replace tools, queue others
         if (toolName === 'str_replace' && !batchState.strReplacePhaseComplete) {
           // Defer str_replace execution
@@ -141,6 +154,16 @@ export async function processStreamWithTools(options: {
             !batchState.strReplacePhaseComplete &&
             batchState.deferredStrReplaces.length > 0
           ) {
+            logger.info(
+              {
+                triggeringTool: toolName,
+                deferredCount: batchState.deferredStrReplaces.length,
+                agentStepId,
+                userInputId,
+              },
+              `toolCallback: Triggering batch str_replace execution (${batchState.deferredStrReplaces.length} deferred tools) due to ${toolName}`,
+            )
+
             batchState.strReplacePhaseComplete = true
 
             // Execute all deferred str_replace tools as a batch
@@ -270,6 +293,44 @@ export async function processStreamWithTools(options: {
   ])
 
   resolveStreamDonePromise()
+
+  // Handle case where only str_replace tools were generated and stream ended
+  if (
+    !batchState.strReplacePhaseComplete &&
+    batchState.deferredStrReplaces.length > 0
+  ) {
+    logger.info(
+      {
+        triggeringEvent: 'stream_end',
+        deferredCount: batchState.deferredStrReplaces.length,
+        agentStepId,
+        userInputId,
+      },
+      `toolCallback: Triggering batch str_replace execution (${batchState.deferredStrReplaces.length} deferred tools) due to stream end`,
+    )
+
+    batchState.strReplacePhaseComplete = true
+
+    // Execute all deferred str_replace tools as a batch
+    previousToolCallFinished = previousToolCallFinished.then(async () => {
+      await executeBatchStrReplaces({
+        deferredStrReplaces: batchState.deferredStrReplaces,
+        toolCalls,
+        toolResults,
+        ws,
+        agentTemplate,
+        fileContext,
+        agentStepId,
+        clientSessionId,
+        userInputId,
+        fullResponse: fullResponseChunks.join(''),
+        onResponseChunk,
+        state,
+        userId,
+      })
+    })
+  }
+
   await previousToolCallFinished
 
   return {

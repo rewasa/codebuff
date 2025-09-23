@@ -3,6 +3,8 @@ import { getFileProcessingValues } from './handlers/tool/write-file'
 import { logger } from '../util/logger'
 import { Benchify } from 'benchify'
 import { env } from '@codebuff/internal/env'
+import { requestToolCall } from '../websockets/websocket-action'
+import { createPatch } from 'diff'
 import type { CodebuffToolCall } from '@codebuff/common/tools/list'
 import type { ToolResultPart } from '@codebuff/common/types/messages/content-part'
 import type { PrintModeEvent } from '@codebuff/common/types/print-mode'
@@ -23,6 +25,35 @@ export type BatchStrReplaceState = {
 }
 
 const BENCHIFY_FILE_TYPES = ['tsx', 'ts', 'jsx', 'js']
+
+// Global Benchify client instance
+let benchifyClient: Benchify | null = null
+
+function getBenchifyClient(): Benchify | null {
+  if (!benchifyClient) {
+    let benchifyApiKey: string | undefined
+    try {
+      benchifyApiKey = env.BENCHIFY_API_KEY
+    } catch (error) {
+      logger.warn(
+        {
+          error: error instanceof Error ? error.message : String(error),
+        },
+        'Failed to access BENCHIFY_API_KEY from environment',
+      )
+      return null
+    }
+
+    if (!benchifyApiKey) {
+      return null
+    }
+
+    benchifyClient = new Benchify({
+      apiKey: benchifyApiKey,
+    })
+  }
+  return benchifyClient
+}
 
 export async function executeBatchStrReplaces({
   deferredStrReplaces,
@@ -57,20 +88,77 @@ export async function executeBatchStrReplaces({
     return
   }
 
-  logger.debug(
-    { count: deferredStrReplaces.length },
-    `Executing batch of ${deferredStrReplaces.length} str_replace calls`,
-  )
-
   const batchPromises: Promise<void>[] = []
   let previousPromise = Promise.resolve()
 
   // Track successfully edited files for benchify call
   const editedFiles: { path: string; contents: string }[] = []
+  // Track intended changes from LLM for benchify call (even if str_replace fails)
+  const intendedChanges: { path: string; contents: string }[] = []
+  // Track original file contents before any modifications
+  const originalContents: Record<string, string> = {}
 
   // Execute all str_replace calls in sequence to maintain file consistency
   for (let i = 0; i < deferredStrReplaces.length; i++) {
     const { toolCall } = deferredStrReplaces[i]
+
+    // Read original content before any modifications (only once per file)
+    if (
+      benchifyCanFixLanguage(toolCall.input.path) &&
+      !originalContents[toolCall.input.path]
+    ) {
+      try {
+        const originalContent = await extractOriginalContent(
+          toolCall.input.path,
+          fileContext,
+        )
+        if (originalContent) {
+          originalContents[toolCall.input.path] = originalContent
+        }
+      } catch (error) {
+        logger.warn(
+          {
+            error: error instanceof Error ? error.message : String(error),
+            path: toolCall.input.path,
+          },
+          'Failed to read original content for benchify',
+        )
+      }
+    }
+
+    // Extract intended content from str_replace operation before attempting execution
+    if (
+      benchifyCanFixLanguage(toolCall.input.path) &&
+      originalContents[toolCall.input.path]
+    ) {
+      try {
+        const intendedContent = await extractIntendedContent(
+          toolCall,
+          originalContents[toolCall.input.path],
+        )
+        if (intendedContent) {
+          const existingIndex = intendedChanges.findIndex(
+            (f) => f.path === toolCall.input.path,
+          )
+          if (existingIndex >= 0) {
+            intendedChanges[existingIndex].contents = intendedContent
+          } else {
+            intendedChanges.push({
+              path: toolCall.input.path,
+              contents: intendedContent,
+            })
+          }
+        }
+      } catch (error) {
+        logger.warn(
+          {
+            error: error instanceof Error ? error.message : String(error),
+            path: toolCall.input.path,
+          },
+          'Failed to extract intended content for benchify',
+        )
+      }
+    }
 
     // Chain each str_replace to the previous one to ensure proper ordering
     const strReplacePromise = previousPromise.then(async () => {
@@ -137,25 +225,25 @@ export async function executeBatchStrReplaces({
                   contents: fileContent,
                 })
               }
-
-              logger.debug(
-                {
-                  path: toolCall.input.path,
-                  contentLength: fileContent.length,
-                },
-                'Tracked edited file for benchify',
-              )
             }
           }
         }
-
-        logger.debug(
-          { toolCallId: toolCall.toolCallId },
-          `Completed str_replace ${i + 1}/${deferredStrReplaces.length}`,
-        )
       } catch (error) {
         logger.error(
-          { error, toolCallId: toolCall.toolCallId },
+          {
+            error:
+              error instanceof Error
+                ? {
+                    message: error.message,
+                    stack: error.stack,
+                    name: error.name,
+                  }
+                : error,
+            toolCallId: toolCall.toolCallId,
+            toolCallInput: JSON.stringify(toolCall.input, null, 2),
+            agentStepId,
+            userInputId,
+          },
           `Error executing batched str_replace ${i + 1}/${deferredStrReplaces.length}`,
         )
 
@@ -192,37 +280,51 @@ export async function executeBatchStrReplaces({
   // Wait for all batched operations to complete
   await Promise.all(batchPromises)
 
-  logger.debug(
-    { count: deferredStrReplaces.length, editedFileCount: editedFiles.length },
-    `Completed batch execution of ${deferredStrReplaces.length} str_replace calls`,
-  )
+  // Call benchify with intended changes (even if str_replace operations failed)
+  const client = getBenchifyClient()
+  if (!client || intendedChanges.length === 0) {
+    return
+  }
 
-  // Call benchify if we have edited files
-  if (editedFiles.length > 0) {
-    try {
-      const benchifyResult = await callBenchify(editedFiles, {
-        agentStepId,
-        clientSessionId,
-        userInputId,
-        userId,
-      })
+  try {
+    const benchifyResult = await callBenchify(intendedChanges, {
+      agentStepId,
+      clientSessionId,
+      userInputId,
+      userId,
+    })
 
-      if (benchifyResult && benchifyResult.length > 0) {
-        // Apply benchify results back to files
-        await applyBenchifyResults(benchifyResult, {
-          ws,
-          onResponseChunk,
-          state,
-          toolResults,
-          toolCalls: deferredStrReplaces.map((d) => d.toolCall),
-        })
-      }
-    } catch (error) {
-      logger.error(
-        { error, editedFiles: editedFiles.map((f) => f.path) },
-        'Failed to call benchify after str_replace batch',
+    if (benchifyResult && benchifyResult.length > 0) {
+      logger.info(
+        {
+          benchifyResultCount: benchifyResult.length,
+          resultFiles: benchifyResult.map((r) => r.path),
+          agentStepId,
+          userInputId,
+        },
+        `executeBatchStrReplaces: Benchify returned ${benchifyResult.length} results, applying them`,
       )
+
+      // Apply benchify results back to files
+      await applyBenchifyResults(benchifyResult, {
+        ws,
+        onResponseChunk,
+        state: { ...state, originalContents },
+        toolResults,
+        toolCalls: deferredStrReplaces.map((d) => d.toolCall),
+        userInputId,
+      })
     }
+  } catch (error) {
+    logger.error(
+      {
+        error: error instanceof Error ? error.message : String(error),
+        intendedChangeFiles: intendedChanges.map((f) => f.path),
+        agentStepId,
+        userInputId,
+      },
+      'executeBatchStrReplaces: Failed to call benchify with intended changes',
+    )
   }
 }
 
@@ -238,22 +340,24 @@ async function callBenchify(
     userId: string | undefined
   },
 ): Promise<{ path: string; contents: string }[] | null> {
-  logger.info(
-    {
-      fileCount: editedFiles.length,
-      files: editedFiles.map((f) => f.path),
-      ...context,
-    },
-    'Calling benchify after str_replace batch completion',
-  )
-
-  const client = new Benchify({
-    apiKey: env.BENCHIFY_API_KEY, // This is the default and can be omitted
-  })
+  const client = getBenchifyClient()
+  if (!client) {
+    return null
+  }
 
   const response = await client.runFixer(editedFiles, {
     fix_types: ['string_literals'],
   })
+
+  logger.info(
+    {
+      responseReceived: !!response,
+      responseLength: response?.length || 0,
+      responseFiles: response?.map((r) => r.path) || [],
+      ...context,
+    },
+    'Benchify runFixer API response received',
+  )
 
   return response
 }
@@ -269,16 +373,9 @@ async function applyBenchifyResults(
     state: Record<string, any>
     toolResults: ToolResultPart[]
     toolCalls: CodebuffToolCall<'str_replace'>[]
+    userInputId: string
   },
 ) {
-  logger.info(
-    {
-      fileCount: benchifyFiles.length,
-      files: benchifyFiles.map((f) => f.path),
-    },
-    'Applying benchify results to files',
-  )
-
   for (const benchifyFile of benchifyFiles) {
     try {
       // Find the corresponding tool call for this file
@@ -294,32 +391,48 @@ async function applyBenchifyResults(
         continue
       }
 
-      // TODO: Apply the benchify content to the actual file
-      // This would typically involve writing the content to the file system
-      // You might want to use your existing file writing infrastructure
+      // Get the original file content from our stored contents
+      const originalContent =
+        context.state.originalContents?.[benchifyFile.path]
 
-      // Create a new tool result indicating benchify updated the file
+      if (!originalContent) {
+        logger.error(
+          { path: benchifyFile.path },
+          'Could not find original file content for diff generation',
+        )
+        continue
+      }
+
+      // Generate a proper unified diff patch
+      const patch = createPatch(
+        benchifyFile.path,
+        originalContent,
+        benchifyFile.contents,
+        '',
+        '',
+      )
+
+      // Request the client to apply the benchify changes as a patch
+      const toolCallResult = await requestToolCall(
+        context.ws,
+        context.userInputId,
+        'str_replace',
+        {
+          type: 'patch',
+          path: benchifyFile.path,
+          content: patch,
+        },
+      )
+
+      // Create a tool result indicating benchify was applied
       const benchifyToolResult: ToolResultPart = {
         type: 'tool-result',
         toolName: 'str_replace',
         toolCallId: relatedToolCall.toolCallId,
-        output: [
-          {
-            type: 'json',
-            value: {
-              tool: 'str_replace',
-              path: benchifyFile.path,
-              content: benchifyFile.contents,
-              patch: '(Updated by benchify)',
-              messages: [
-                'File updated by benchify after batch str_replace completion',
-              ],
-            },
-          },
-        ],
+        output: toolCallResult.output,
       }
 
-      // Update the existing tool result or add new one
+      // Update the existing tool result
       const existingResultIndex = context.toolResults.findIndex(
         (tr) => tr.toolCallId === relatedToolCall.toolCallId,
       )
@@ -336,11 +449,6 @@ async function applyBenchifyResults(
         toolCallId: relatedToolCall.toolCallId,
         output: benchifyToolResult.output,
       })
-
-      logger.debug(
-        { fileName: benchifyFile.path, toolCallId: relatedToolCall.toolCallId },
-        'Applied benchify result to file',
-      )
     } catch (error) {
       logger.error(
         { error, fileName: benchifyFile.path },
@@ -350,9 +458,75 @@ async function applyBenchifyResults(
   }
 }
 
+/**
+ * Extracts the original file content before any modifications
+ */
+async function extractOriginalContent(
+  filePath: string,
+  fileContext: ProjectFileContext,
+): Promise<string | null> {
+  try {
+    const absolutePath = `${fileContext.projectRoot}/${filePath}`
+    const currentFile = await file(absolutePath)
+    return await currentFile.text()
+  } catch (error) {
+    logger.warn(
+      {
+        error: error instanceof Error ? error.message : String(error),
+        path: filePath,
+      },
+      'Failed to read original file content',
+    )
+    return null
+  }
+}
+
+/**
+ * Extracts the intended file content by applying str_replace operations to the current file
+ */
+async function extractIntendedContent(
+  toolCall: CodebuffToolCall<'str_replace'>,
+  originalContent: string,
+): Promise<string | null> {
+  try {
+    let currentContent = originalContent
+
+    // Apply all replacements to get the intended content
+    for (const replacement of toolCall.input.replacements) {
+      const { old, new: newStr, allowMultiple } = replacement
+
+      if (allowMultiple) {
+        currentContent = currentContent.replaceAll(old, newStr)
+      } else {
+        // Find the first occurrence and replace it
+        const index = currentContent.indexOf(old)
+        if (index !== -1) {
+          currentContent =
+            currentContent.substring(0, index) +
+            newStr +
+            currentContent.substring(index + old.length)
+        } else {
+          // If we can't find the old string, log it but continue with other replacements
+        }
+      }
+    }
+
+    return currentContent
+  } catch (error) {
+    logger.warn(
+      {
+        error: error instanceof Error ? error.message : String(error),
+        path: toolCall.input.path,
+      },
+      'Failed to apply replacements for intended content extraction',
+    )
+    return null
+  }
+}
+
 function benchifyCanFixLanguage(path: string): boolean {
-  for (const file_extension in BENCHIFY_FILE_TYPES) {
-    if (path.endsWith(file_extension)) {
+  for (const file_extension of BENCHIFY_FILE_TYPES) {
+    if (path.endsWith(`.${file_extension}`)) {
       return true
     }
   }
