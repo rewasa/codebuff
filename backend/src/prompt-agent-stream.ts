@@ -3,7 +3,6 @@ import { providerModelNames } from '@codebuff/common/old-constants'
 import { promptAiSdkStream } from './llm-apis/vercel-ai-sdk/ai-sdk'
 import { globalStopSequence } from './tools/constants'
 import { env } from '@codebuff/internal/env'
-import { openRouterLanguageModel } from './llm-apis/openrouter'
 
 import type { AgentTemplate } from './templates/types'
 import type { Message } from '@codebuff/common/types/messages/codebuff-message'
@@ -17,7 +16,6 @@ export const getAgentStreamFromTemplate = (params: {
   onCostCalculated?: (credits: number) => Promise<void>
   agentId?: string
   includeCacheControl?: boolean
-  enableTokenOptimization?: boolean
 
   template: AgentTemplate
 }) => {
@@ -65,7 +63,8 @@ export const getAgentStreamFromTemplate = (params: {
       maxOutputTokens: 32_000,
       onCostCalculated,
       includeCacheControl,
-      agentId
+      agentId,
+      maxRetries: 3,
     }
 
     // Add Gemini-specific options if needed
@@ -75,14 +74,6 @@ export const getAgentStreamFromTemplate = (params: {
 
     if (!options.providerOptions) {
       options.providerOptions = {}
-    }
-    if (provider === 'gemini') {
-      if (!options.providerOptions.gemini) {
-        options.providerOptions.gemini = {}
-      }
-      if (!options.providerOptions.gemini.thinkingConfig) {
-        options.providerOptions.gemini.thinkingConfig = { thinkingBudget: 128 }
-      }
     }
     if (!options.providerOptions.openrouter) {
       options.providerOptions.openrouter = {}
