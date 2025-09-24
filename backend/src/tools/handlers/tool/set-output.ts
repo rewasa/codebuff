@@ -27,6 +27,21 @@ export const handleSetOutput = ((params: {
   const output = toolCall.input
   const { agentState, localAgentTemplates } = state
 
+  logger.info(
+    {
+      toolCallId: toolCall.toolCallId,
+      agentType: agentState?.agentType,
+      agentId: agentState?.agentId,
+      hasAgentState: !!agentState,
+      hasLocalAgentTemplates: !!localAgentTemplates,
+      outputProvided: !!output,
+      outputType: typeof output,
+      outputKeys:
+        output && typeof output === 'object' ? Object.keys(output) : null,
+    },
+    'handleSetOutput: set_output tool handler called',
+  )
+
   if (!agentState) {
     throw new Error(
       'Internal error for set_output: Missing agentState in state',
@@ -40,6 +55,17 @@ export const handleSetOutput = ((params: {
   }
 
   const triggerSetOutput = async () => {
+    logger.info(
+      {
+        agentType: agentState.agentType,
+        agentId: agentState.agentId,
+        outputReceived: output,
+        outputType: typeof output,
+        hasOutput: !!output,
+      },
+      'set_output: received output data',
+    )
+
     // Validate output against outputSchema if defined
     let agentTemplate = null
     if (agentState.agentType) {
@@ -47,10 +73,28 @@ export const handleSetOutput = ((params: {
         agentState.agentType,
         localAgentTemplates,
       )
+      logger.info(
+        {
+          agentType: agentState.agentType,
+          hasOutputSchema: !!agentTemplate?.outputSchema,
+          outputSchemaKeys: agentTemplate?.outputSchema
+            ? Object.keys(agentTemplate.outputSchema)
+            : null,
+        },
+        'set_output: agent template and schema info',
+      )
     }
     if (agentTemplate?.outputSchema) {
       try {
-        agentTemplate.outputSchema.parse(output)
+        const validationResult = agentTemplate.outputSchema.parse(output)
+        logger.info(
+          {
+            agentType: agentState.agentType,
+            validationSucceeded: true,
+            validatedOutput: validationResult,
+          },
+          'set_output: schema validation succeeded',
+        )
       } catch (error) {
         const errorMessage = `Output validation error: Output failed to match the output schema and was ignored. You might want to try again! Issues: ${error}`
         logger.error(
@@ -59,6 +103,7 @@ export const handleSetOutput = ((params: {
             agentType: agentState.agentType,
             agentId: agentState.agentId,
             error,
+            errorMessage: String(error),
           },
           'set_output validation error',
         )
@@ -67,22 +112,59 @@ export const handleSetOutput = ((params: {
     }
 
     // Set the output (completely replaces previous output)
+    const previousOutput = agentState.output
     agentState.output = output
+
+    logger.info(
+      {
+        agentType: agentState.agentType,
+        agentId: agentState.agentId,
+        previousOutput,
+        newOutput: agentState.output,
+        outputSet: true,
+      },
+      'set_output: output successfully set on agent state',
+    )
 
     return 'Output set'
   }
 
   return {
     result: (async () => {
+      logger.info(
+        {
+          toolCallId: toolCall.toolCallId,
+          agentType: agentState?.agentType,
+        },
+        'handleSetOutput: waiting for previous tool call to finish',
+      )
       await previousToolCallFinished
-      return [
+      logger.info(
+        {
+          toolCallId: toolCall.toolCallId,
+          agentType: agentState?.agentType,
+        },
+        'handleSetOutput: previous tool call finished, executing triggerSetOutput',
+      )
+      const message = await triggerSetOutput()
+      const result: [{ type: 'json'; value: { message: string } }] = [
         {
           type: 'json',
           value: {
-            message: await triggerSetOutput(),
+            message,
           },
         },
       ]
+      logger.info(
+        {
+          toolCallId: toolCall.toolCallId,
+          agentType: agentState?.agentType,
+          message,
+          result,
+        },
+        'handleSetOutput: returning result from set_output handler',
+      )
+      return result
     })(),
     state: { agentState: agentState },
   }

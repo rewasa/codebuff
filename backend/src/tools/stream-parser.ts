@@ -106,8 +106,31 @@ export async function processStreamWithTools(options: {
 
   function toolCallback<T extends ToolName>(toolName: T) {
     return {
-      onTagStart: () => {},
+      onTagStart: () => {
+        const { logger } = require('../util/logger')
+        logger.info(
+          {
+            toolName,
+            agentType: agentTemplate.id,
+            agentStepId,
+            isSetOutput: toolName === 'set_output',
+          },
+          `stream-parser: Tool tag started for '${toolName}'`,
+        )
+      },
       onTagEnd: async (_: string, input: Record<string, string>) => {
+        const { logger } = require('../util/logger')
+        logger.info(
+          {
+            toolName,
+            input,
+            agentType: agentTemplate.id,
+            agentStepId,
+            isSetOutput: toolName === 'set_output',
+            inputKeys: Object.keys(input || {}),
+          },
+          `stream-parser: Tool tag ended for '${toolName}', delegating to executeToolCall`,
+        )
         // delegated to reusable helper
         previousToolCallFinished = executeToolCall({
           toolName,

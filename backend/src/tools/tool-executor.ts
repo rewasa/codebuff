@@ -148,6 +148,18 @@ export function executeToolCall<T extends ToolName>({
   autoInsertEndStepParam = false,
   excludeToolFromMessageHistory = false,
 }: ExecuteToolCallParams<T>): Promise<void> {
+  logger.info(
+    {
+      toolName,
+      input,
+      agentStepId,
+      userId,
+      agentType: agentTemplate.id,
+      hasAgentState: !!state.agentState,
+      inputKeys: Object.keys(input || {}),
+    },
+    `executeToolCall: Starting execution of tool '${toolName}'`,
+  )
   const toolCall: CodebuffToolCall<T> | ToolCallError = parseRawToolCall<T>(
     {
       toolName,
@@ -170,12 +182,22 @@ export function executeToolCall<T extends ToolName>({
         },
       ],
     })
-    logger.debug(
-      { toolCall, error: toolCall.error },
-      `${toolName} error: ${toolCall.error}`,
+    logger.error(
+      { toolCall, error: toolCall.error, agentType: agentTemplate.id },
+      `executeToolCall: Tool '${toolName}' failed with parsing error: ${toolCall.error}`,
     )
     return previousToolCallFinished
   }
+
+  logger.info(
+    {
+      toolName,
+      toolCallId: toolCall.toolCallId,
+      agentType: agentTemplate.id,
+      parsedInput: toolCall.input,
+    },
+    `executeToolCall: Successfully parsed tool call for '${toolName}'`,
+  )
 
   onResponseChunk({
     type: 'tool_call',
@@ -188,6 +210,14 @@ export function executeToolCall<T extends ToolName>({
 
   // Filter out restricted tools in ask mode unless exporting summary
   if (!agentTemplate.toolNames.includes(toolCall.toolName)) {
+    logger.warn(
+      {
+        toolName,
+        availableTools: agentTemplate.toolNames,
+        agentType: agentTemplate.id,
+      },
+      `executeToolCall: Tool '${toolName}' is not available for agent type '${agentTemplate.id}'`,
+    )
     toolResults.push({
       type: 'tool-result',
       toolName,
@@ -203,6 +233,15 @@ export function executeToolCall<T extends ToolName>({
     })
     return previousToolCallFinished
   }
+
+  logger.info(
+    {
+      toolName,
+      agentType: agentTemplate.id,
+      isSetOutput: toolName === 'set_output',
+    },
+    `executeToolCall: Tool '${toolName}' is available, proceeding with execution`,
+  )
 
   // Cast to any to avoid type errors
   const handler = codebuffToolHandlers[toolName] as any
@@ -250,11 +289,26 @@ export function executeToolCall<T extends ToolName>({
       toolCallId: toolCall.toolCallId,
       output: result,
     }
-    logger.debug(
-      { input, toolResult },
-      `${toolName} tool call & result (${toolResult.toolCallId})`,
+    logger.info(
+      {
+        input,
+        toolResult,
+        agentType: agentTemplate.id,
+        isSetOutput: toolName === 'set_output',
+        resultUndefined: result === undefined,
+        resultLength: Array.isArray(result) ? result.length : 'not-array',
+      },
+      `executeToolCall: Tool '${toolName}' completed with result (${toolResult.toolCallId})`,
     )
     if (result === undefined) {
+      logger.warn(
+        {
+          toolName,
+          toolCallId: toolCall.toolCallId,
+          agentType: agentTemplate.id,
+        },
+        `executeToolCall: Tool '${toolName}' returned undefined result`,
+      )
       return
     }
 

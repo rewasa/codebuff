@@ -344,6 +344,12 @@ codebuff --create <template> [project-name]
 
 Templates are maintained in the codebuff community repo. Each directory corresponds to a template usable with the --create flag.
 
+## Git-committer Agent
+
+- When git-committer returns null structured output, it indicates the agent failed to commit changes
+- Always check git status manually and commit manually when this happens
+- The agent needs proper error handling and structured output validation
+
 ## Database Schema and Migrations
 
 **Important**: When adding database indexes or schema changes, modify the schema file directly (`common/src/db/schema.ts`) using Drizzle's index syntax, then run the migration generation script to create the actual migration files.

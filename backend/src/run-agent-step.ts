@@ -522,7 +522,23 @@ export const loopAgentSteps = async (
       const startTime = new Date()
 
       // 1. Run programmatic step first if it exists
+      logger.info(
+        {
+          agentType: agentTemplate.id,
+          hasHandleSteps: !!agentTemplate.handleSteps,
+          handleStepsType: typeof agentTemplate.handleSteps,
+          shouldEndTurn,
+          totalSteps,
+        },
+        'loopAgentSteps: Checking if agent has handleSteps'
+      )
       if (agentTemplate.handleSteps) {
+        logger.info(
+          {
+            agentType: agentTemplate.id,
+          },
+          'loopAgentSteps: Agent has handleSteps, calling runProgrammaticStep'
+        )
         const {
           agentState: programmaticAgentState,
           endTurn,
@@ -548,6 +564,13 @@ export const loopAgentSteps = async (
         if (endTurn) {
           shouldEndTurn = true
         }
+      } else {
+        logger.info(
+          {
+            agentType: agentTemplate.id,
+          },
+          'loopAgentSteps: Agent has no handleSteps, skipping programmatic step'
+        )
       }
 
       if (ASYNC_AGENTS_ENABLED) {
