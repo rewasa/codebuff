@@ -36,7 +36,7 @@ const definition: AgentDefinition = {
     'Follow the steps to create a good commit: analyze changes with git diff and git log, read relevant files for context, stage appropriate files, analyze changes, and create a commit with proper formatting.',
 
   stepPrompt:
-    'Based on the git diff and commit history I just provided, respond with ONLY a concise, imperative commit message that explains why the change was made. Do not include any analysis, explanation, or other text - just the commit message itself that will be used directly for the git commit.',
+    'Based on the git diff and commit history I just provided, analyze the changes and create a good commit message. Write a brief analysis of what changed, then end your response with the exact format: COMMIT_MESSAGE: [your message here]. The commit message should be concise, imperative, and explain why the change was made.',
 
   outputMode: 'structured_output',
   outputSchema: {
@@ -170,17 +170,33 @@ Now I'll analyze these changes and create an appropriate commit message.`,
     // Phase 4: Extract commit message from AI response
     // Use the updated agentState from stepResult to get the AI's response
     const updatedAgentState = stepResult.agentState
-    const lastAssistantMessage = updatedAgentState.messageHistory.findLast(
-      (msg) => msg.role === 'assistant'
-    )
+    // Find the last assistant message (findLast may not be available in QuickJS)
+    let lastAssistantMessage = undefined
+    for (let i = updatedAgentState.messageHistory.length - 1; i >= 0; i--) {
+      if (updatedAgentState.messageHistory[i].role === 'assistant') {
+        lastAssistantMessage = updatedAgentState.messageHistory[i]
+        break
+      }
+    }
     let commitMessage = 'Auto-commit via git-committer agent'
 
     if (
       lastAssistantMessage &&
       typeof lastAssistantMessage.content === 'string'
     ) {
-      // Use the entire message content as the commit message
-      commitMessage = lastAssistantMessage.content.trim()
+      const content = lastAssistantMessage.content.trim()
+      
+      // Try to extract commit message using regex patterns
+      const commitMessageMatch =
+        content.match(/(?:COMMIT_MESSAGE:|Commit message:)\s*(.+?)(?:\n|$)/i) ||
+        content.match(/commit message.*?[:\-]\s*(.+?)(?:\n|$)/i)
+      
+      if (commitMessageMatch && commitMessageMatch[1].trim()) {
+        commitMessage = commitMessageMatch[1].trim()
+      } else if (content && content.length < 100 && !content.includes('\n\n')) {
+        // If it's short and doesn't have multiple paragraphs, use as-is
+        commitMessage = content
+      }
     }
 
     // Phase 5: Stage and commit
