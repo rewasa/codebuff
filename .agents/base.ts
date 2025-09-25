@@ -1,16 +1,12 @@
 import { publisher } from './constants';
-import { reviewer } from './factory/reviewer';
+import { base } from './factory/base.ts';
 
 import type { SecretAgentDefinition } from './types/secret-agent-definition';
 
 const definition: SecretAgentDefinition = {
-  id: 'reviewer',
+  id: 'base',
   publisher,
-  ...reviewer('google/gemini-2.5-pro'),
-  reasoningOptions: {
-    effort: 'low',
-    exclude: true,
-  },
+  ...base('anthropic/claude-4-sonnet-20250522', 'normal'),
 };
 
 export default definition;
