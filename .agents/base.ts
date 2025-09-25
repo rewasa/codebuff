@@ -1,12 +1,12 @@
-import { publisher } from './constants'
-import { base } from './factory/base.ts'
+import { publisher } from './constants';
+import { base } from './factory/base.ts';
 
-import type { SecretAgentDefinition } from './types/secret-agent-definition'
+import type { SecretAgentDefinition } from './types/secret-agent-definition';
 
 const definition: SecretAgentDefinition = {
   id: 'base',
   publisher,
-  ...base('anthropic/claude-sonnet-4.5', 'normal'),
-}
+  ...base('anthropic/claude-4-sonnet-20250522', 'normal'),
+};
 
-export default definition
+export default definition;

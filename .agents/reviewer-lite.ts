@@ -4,13 +4,9 @@ import { reviewer } from './factory/reviewer';
 import type { SecretAgentDefinition } from './types/secret-agent-definition';
 
 const definition: SecretAgentDefinition = {
-  id: 'reviewer',
+  id: 'reviewer-lite',
   publisher,
-  ...reviewer('google/gemini-2.5-pro'),
-  reasoningOptions: {
-    effort: 'low',
-    exclude: true,
-  },
+  ...reviewer('x-ai/grok-4-fast:free'),
 };
 
 export default definition;
