@@ -179,7 +179,10 @@ export interface AgentDefinition {
    * }
    * }
    */
-  handleSteps?: (context: AgentStepContext) => Generator<
+  handleSteps?: (
+    context: AgentStepContext,
+    logger?: Logger,
+  ) => Generator<
     ToolCall | 'STEP' | 'STEP_ALL',
     void,
     {
@@ -193,6 +196,13 @@ export interface AgentDefinition {
 // ============================================================================
 // Supporting Types
 // ============================================================================
+
+export interface Logger {
+  debug: (data: any, msg?: string) => void
+  info: (data: any, msg?: string) => void
+  warn: (data: any, msg?: string) => void
+  error: (data: any, msg?: string) => void
+}
 
 export interface AgentState {
   agentId: string
