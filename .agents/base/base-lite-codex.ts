@@ -1,7 +1,7 @@
-import { publisher } from '../constants.ts'
-import baseLite from './base-lite.ts'
+import { publisher } from './constants.ts';
+import baseLite from './base-lite.ts';
 
-import type { SecretAgentDefinition } from '../types/secret-agent-definition.ts'
+import type { SecretAgentDefinition } from './types/secret-agent-definition.ts';
 
 const definition: SecretAgentDefinition = {
   ...baseLite,
@@ -12,6 +12,6 @@ const definition: SecretAgentDefinition = {
     enabled: true,
     effort: 'medium',
   },
-}
+};
 
-export default definition
+export default definition;

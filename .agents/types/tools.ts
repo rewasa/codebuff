@@ -6,8 +6,6 @@ export type ToolName =
   | 'code_search'
   | 'end_turn'
   | 'find_files'
-  | 'glob'
-  | 'list_directory'
   | 'lookup_agent_info'
   | 'read_docs'
   | 'read_files'
@@ -19,38 +17,36 @@ export type ToolName =
   | 'str_replace'
   | 'think_deeply'
   | 'web_search'
-  | 'write_file'
+  | 'write_file';
 
 /**
  * Map of tool names to their parameter types
  */
 export interface ToolParamsMap {
-  add_message: AddMessageParams
-  code_search: CodeSearchParams
-  end_turn: EndTurnParams
-  find_files: FindFilesParams
-  glob: GlobParams
-  list_directory: ListDirectoryParams
-  lookup_agent_info: LookupAgentInfoParams
-  read_docs: ReadDocsParams
-  read_files: ReadFilesParams
-  run_file_change_hooks: RunFileChangeHooksParams
-  run_terminal_command: RunTerminalCommandParams
-  set_messages: SetMessagesParams
-  set_output: SetOutputParams
-  spawn_agents: SpawnAgentsParams
-  str_replace: StrReplaceParams
-  think_deeply: ThinkDeeplyParams
-  web_search: WebSearchParams
-  write_file: WriteFileParams
+  add_message: AddMessageParams;
+  code_search: CodeSearchParams;
+  end_turn: EndTurnParams;
+  find_files: FindFilesParams;
+  lookup_agent_info: LookupAgentInfoParams;
+  read_docs: ReadDocsParams;
+  read_files: ReadFilesParams;
+  run_file_change_hooks: RunFileChangeHooksParams;
+  run_terminal_command: RunTerminalCommandParams;
+  set_messages: SetMessagesParams;
+  set_output: SetOutputParams;
+  spawn_agents: SpawnAgentsParams;
+  str_replace: StrReplaceParams;
+  think_deeply: ThinkDeeplyParams;
+  web_search: WebSearchParams;
+  write_file: WriteFileParams;
 }
 
 /**
  * Add a new message to the conversation history. To be used for complex requests that can't be solved in a single step, as you may forget what happened!
  */
 export interface AddMessageParams {
-  role: 'user' | 'assistant'
-  content: string
+  role: 'user' | 'assistant';
+  content: string;
 }
 
 /**
@@ -58,13 +54,13 @@ export interface AddMessageParams {
  */
 export interface CodeSearchParams {
   /** The pattern to search for. */
-  pattern: string
+  pattern: string;
   /** Optional ripgrep flags to customize the search (e.g., "-i" for case-insensitive, "-t ts" for TypeScript files only, "-A 3" for 3 lines after match, "-B 2" for 2 lines before match, "--type-not test" to exclude test files). */
-  flags?: string
+  flags?: string;
   /** Optional working directory to search within, relative to the project root. Defaults to searching the entire project. */
-  cwd?: string
-  /** Maximum number of results to return per file. Defaults to 15. There is also a global limit of 250 results across all files. */
-  maxResults?: number
+  cwd?: string;
+  /** Maximum number of results to return. Defaults to 30. */
+  maxResults?: number;
 }
 
 /**
@@ -77,25 +73,7 @@ export interface EndTurnParams {}
  */
 export interface FindFilesParams {
   /** A brief natural language description of the files or the name of a function or class you are looking for. It's also helpful to mention a directory or two to look within. */
-  prompt: string
-}
-
-/**
- * Search for files matching a glob pattern. Returns matching file paths sorted by modification time.
- */
-export interface GlobParams {
-  /** Glob pattern to match files against (e.g., *.js, src/glob/*.ts, glob/test/glob/*.go). */
-  pattern: string
-  /** Optional working directory to search within, relative to project root. If not provided, searches from project root. */
-  cwd?: string
-}
-
-/**
- * List files and directories in the specified path. Returns information about each entry including name, type, size, and modification time.
- */
-export interface ListDirectoryParams {
-  /** Directory path to list, relative to the project root. */
-  path: string
+  prompt: string;
 }
 
 /**
@@ -103,7 +81,7 @@ export interface ListDirectoryParams {
  */
 export interface LookupAgentInfoParams {
   /** Agent ID (short local or full published format) */
-  agentId: string
+  agentId: string;
 }
 
 /**
@@ -111,11 +89,11 @@ export interface LookupAgentInfoParams {
  */
 export interface ReadDocsParams {
   /** The library or framework name (e.g., "Next.js", "MongoDB", "React"). Use the official name as it appears in documentation if possible. Only public libraries available in Context7's database are supported, so small or private libraries may not be available. */
-  libraryTitle: string
+  libraryTitle: string;
   /** Specific topic to focus on (e.g., "routing", "hooks", "authentication") */
-  topic: string
+  topic: string;
   /** Optional maximum number of tokens to return. Defaults to 20000. Values less than 10000 are automatically increased to 10000. */
-  max_tokens?: number
+  max_tokens?: number;
 }
 
 /**
@@ -123,7 +101,7 @@ export interface ReadDocsParams {
  */
 export interface ReadFilesParams {
   /** List of file paths to read. */
-  paths: string[]
+  paths: string[];
 }
 
 /**
@@ -131,7 +109,7 @@ export interface ReadFilesParams {
  */
 export interface RunFileChangeHooksParams {
   /** List of file paths that were changed and should trigger file change hooks */
-  files: string[]
+  files: string[];
 }
 
 /**
@@ -139,20 +117,20 @@ export interface RunFileChangeHooksParams {
  */
 export interface RunTerminalCommandParams {
   /** CLI command valid for user's OS. */
-  command: string
+  command: string;
   /** Either SYNC (waits, returns output) or BACKGROUND (runs in background). Default SYNC */
-  process_type?: 'SYNC' | 'BACKGROUND'
+  process_type?: 'SYNC' | 'BACKGROUND';
   /** The working directory to run the command in. Default is the project root. */
-  cwd?: string
+  cwd?: string;
   /** Set to -1 for no timeout. Does not apply for BACKGROUND commands. Default 30 */
-  timeout_seconds?: number
+  timeout_seconds?: number;
 }
 
 /**
  * Set the conversation history to the provided messages.
  */
 export interface SetMessagesParams {
-  messages: any
+  messages: any;
 }
 
 /**
@@ -166,12 +144,12 @@ export interface SetOutputParams {}
 export interface SpawnAgentsParams {
   agents: {
     /** Agent to spawn */
-    agent_type: string
+    agent_type: string;
     /** Prompt to send to the agent */
-    prompt?: string
+    prompt?: string;
     /** Parameters object for the agent (if any) */
-    params?: Record<string, any>
-  }[]
+    params?: Record<string, any>;
+  }[];
 }
 
 /**
@@ -179,16 +157,16 @@ export interface SpawnAgentsParams {
  */
 export interface StrReplaceParams {
   /** The path to the file to edit. */
-  path: string
+  path: string;
   /** Array of replacements to make. */
   replacements: {
     /** The string to replace. This must be an *exact match* of the string you want to replace, including whitespace and punctuation. */
-    old: string
+    old: string;
     /** The string to replace the corresponding old string with. Can be empty to delete. */
-    new: string
+    new: string;
     /** Whether to allow multiple replacements of old string. */
-    allowMultiple?: boolean
-  }[]
+    allowMultiple?: boolean;
+  }[];
 }
 
 /**
@@ -196,7 +174,7 @@ export interface StrReplaceParams {
  */
 export interface ThinkDeeplyParams {
   /** Detailed step-by-step analysis. Initially keep each step concise (max ~5-7 words per step). */
-  thought: string
+  thought: string;
 }
 
 /**
@@ -204,9 +182,9 @@ export interface ThinkDeeplyParams {
  */
 export interface WebSearchParams {
   /** The search query to find relevant web content */
-  query: string
+  query: string;
   /** Search depth - 'standard' for quick results, 'deep' for more comprehensive search. Default is 'standard'. */
-  depth?: 'standard' | 'deep'
+  depth?: 'standard' | 'deep';
 }
 
 /**
@@ -214,14 +192,14 @@ export interface WebSearchParams {
  */
 export interface WriteFileParams {
   /** Path to the file relative to the **project root** */
-  path: string
+  path: string;
   /** What the change is intended to do in only one sentence. */
-  instructions: string
+  instructions: string;
   /** Edit snippet to apply to the file. */
-  content: string
+  content: string;
 }
 
 /**
  * Get parameters type for a specific tool
  */
-export type GetToolParams<T extends ToolName> = ToolParamsMap[T]
+export type GetToolParams<T extends ToolName> = ToolParamsMap[T];
