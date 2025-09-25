@@ -1,4 +1,4 @@
-import type { AgentDefinition, ToolCall } from '../types/agent-definition'
+import type { AgentDefinition, ToolCall } from '../types/agent-definition';
 
 /**
  * ETL Manager Agent
@@ -13,17 +13,27 @@ const agent: AgentDefinition = {
   model: 'openai/gpt-5',
   publisher: 'brandon',
 
-  toolNames: ['spawn_agents', 'think_deeply', 'add_message'],
+  toolNames: [
+    'spawn_agents',
+    'think_deeply',
+    'add_message',
+  ],
 
   outputMode: 'last_message',
   stepPrompt: '',
   includeMessageHistory: true,
 
-  spawnableAgents: ['extract-agent', 'transform-agent', 'load-agent'],
+  spawnableAgents: [
+    'extract-agent',
+    'transform-agent',
+    'load-agent',
+  ],
 
   handleSteps: function* ({ prompt, params }) {
     // Step 1: Generate context-aware prompt for extract agent
-    const extractPrompt = `Analyzing user request "${prompt}" to generate optimal extraction strategy. Consider: data domain (${params?.domain || 'unknown'}), specific search terms needed, target sources, and query refinement for maximum relevance.`
+    const extractPrompt = `Analyzing user request "${prompt}" to generate optimal extraction strategy. Consider: data domain (${
+      params?.domain || 'unknown'
+    }), specific search terms needed, target sources, and query refinement for maximum relevance.`;
 
     const { toolResult: extractResults } = yield {
       toolName: 'spawn_agents',
@@ -36,7 +46,7 @@ const agent: AgentDefinition = {
           },
         ],
       },
-    } satisfies ToolCall
+    } satisfies ToolCall;
     if (!extractResults || extractResults.length === 0) {
       yield {
         toolName: 'add_message',
@@ -44,16 +54,16 @@ const agent: AgentDefinition = {
           role: 'user',
           content: 'Extract step failed.',
         },
-      } satisfies ToolCall
-      return
+      } satisfies ToolCall;
+      return;
     }
     const extractResult =
       extractResults[0]?.type === 'json'
         ? extractResults[0].value
-        : extractResults[0]
+        : extractResults[0];
 
     // Step 2: Generate context-aware prompt for transform agent
-    const transformPrompt = `Processing extracted data from previous step. Need to transform raw data into canonical schema. Consider: data quality, normalization needs, deduplication strategy, and enrichment opportunities based on extracted content.`
+    const transformPrompt = `Processing extracted data from previous step. Need to transform raw data into canonical schema. Consider: data quality, normalization needs, deduplication strategy, and enrichment opportunities based on extracted content.`;
 
     const { toolResult: transformResults } = yield {
       toolName: 'spawn_agents',
@@ -69,7 +79,7 @@ const agent: AgentDefinition = {
           },
         ],
       },
-    } satisfies ToolCall
+    } satisfies ToolCall;
     if (!transformResults || transformResults.length === 0) {
       yield {
         toolName: 'add_message',
@@ -77,16 +87,16 @@ const agent: AgentDefinition = {
           role: 'user',
           content: 'Transform step failed.',
         },
-      } satisfies ToolCall
-      return
+      } satisfies ToolCall;
+      return;
     }
     const transformResult =
       transformResults[0]?.type === 'json'
         ? transformResults[0].value
-        : transformResults[0]
+        : transformResults[0];
 
     // Step 3: Generate context-aware prompt for load agent
-    const loadPrompt = `Final filtering and ranking phase for user request "${prompt}". Need to apply user constraints, score relevance, and rank results. Consider: user preferences, contextual relevance, quality metrics, and practical constraints.`
+    const loadPrompt = `Final filtering and ranking phase for user request "${prompt}". Need to apply user constraints, score relevance, and rank results. Consider: user preferences, contextual relevance, quality metrics, and practical constraints.`;
 
     const { toolResult: loadResults } = yield {
       toolName: 'spawn_agents',
@@ -102,7 +112,7 @@ const agent: AgentDefinition = {
           },
         ],
       },
-    } satisfies ToolCall
+    } satisfies ToolCall;
     if (!loadResults || loadResults.length === 0) {
       yield {
         toolName: 'add_message',
@@ -110,11 +120,11 @@ const agent: AgentDefinition = {
           role: 'user',
           content: 'Load step failed.',
         },
-      } satisfies ToolCall
-      return
+      } satisfies ToolCall;
+      return;
     }
     const loadResult =
-      loadResults[0]?.type === 'json' ? loadResults[0].value : loadResults[0]
+      loadResults[0]?.type === 'json' ? loadResults[0].value : loadResults[0];
 
     // Return final ETL results
     yield {
@@ -126,7 +136,7 @@ const agent: AgentDefinition = {
             ? loadResult
             : JSON.stringify(loadResult),
       },
-    } satisfies ToolCall
+    } satisfies ToolCall;
   },
 
   inputSchema: {
@@ -166,6 +176,6 @@ const agent: AgentDefinition = {
     'Use this agent to execute a complete ETL pipeline for data processing requests',
 
   instructionsPrompt: '',
-}
+};
 
-export default agent
+export default agent;

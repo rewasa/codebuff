@@ -1,4 +1,4 @@
-import type { AgentDefinition } from '../types/agent-definition'
+import type { AgentDefinition } from '../types/agent-definition';
 
 /**
  * Load Agent
@@ -15,7 +15,12 @@ const agent: AgentDefinition = {
   includeMessageHistory: false,
   publisher: 'brandon',
 
-  toolNames: ['read_files', 'write_file', 'web_search', 'end_turn'],
+  toolNames: [
+    'read_files',
+    'write_file',
+    'web_search',
+    'end_turn',
+  ],
 
   spawnableAgents: [],
 
@@ -208,6 +213,6 @@ Speak like an adaptable recommendation system:
 "[RANK] Generated recommendations based on available data quality"`,
 
   stepPrompt: `Filter, score and rank entities based on user constraints and preferences.`,
-}
+};
 
-export default agent
+export default agent;

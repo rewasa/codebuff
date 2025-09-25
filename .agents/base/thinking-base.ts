@@ -1,14 +1,15 @@
-import { AgentTemplateTypes } from '@codebuff/common/types/session-state'
+import { AGENT_PERSONAS } from '@codebuff/common/constants/agents';
+import { AgentTemplateTypes } from '@codebuff/common/types/session-state';
 
 import {
   baseAgentAgentStepPrompt,
   baseAgentSystemPrompt,
   baseAgentUserInputPrompt,
-} from './base-prompts'
+} from '../prompts';
 
-import type { SecretAgentDefinition } from '../types/secret-agent-definition'
-import type { Model } from '@codebuff/common/old-constants'
-import type { ToolCall } from '@codebuff/common/templates/initial-agents-dir/types/agent-definition'
+import type { SecretAgentDefinition } from '../types/secret-agent-definition';
+import type { Model } from '@codebuff/common/old-constants';
+import type { ToolCall } from '@codebuff/common/templates/initial-agents-dir/types/agent-definition';
 
 const baseAgentToolNames = [
   'create_plan',
@@ -23,14 +24,14 @@ const baseAgentToolNames = [
   'read_files',
   'think_deeply',
   'update_subgoal',
-] as const
+] as const;
 
 const baseAgentSubagents = [
   AgentTemplateTypes.file_picker,
   AgentTemplateTypes.researcher,
   AgentTemplateTypes.thinker,
   AgentTemplateTypes.reviewer,
-]
+];
 
 export const thinkingBase = (
   model: Model,
@@ -68,10 +69,10 @@ export const thinkingBase = (
             },
           ],
         },
-      } satisfies ToolCall
+      } satisfies ToolCall;
 
-      const { stepsComplete } = yield 'STEP'
-      if (stepsComplete) break
+      const { stepsComplete } = yield 'STEP';
+      if (stepsComplete) break;
     }
   },
-})
+});

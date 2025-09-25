@@ -1,6 +1,6 @@
-import { publisher } from '../constants'
+import { publisher } from '../constants';
 
-import type { AgentDefinition } from '../types/agent-definition'
+import type { AgentDefinition } from '../types/agent-definition';
 
 const definition: AgentDefinition = {
   id: 'oss-model-researcher',
@@ -18,7 +18,12 @@ const definition: AgentDefinition = {
   },
   outputMode: 'last_message',
   includeMessageHistory: false,
-  toolNames: ['web_search', 'read_docs', 'read_files', 'end_turn'],
+  toolNames: [
+    'web_search',
+    'read_docs',
+    'read_files',
+    'end_turn',
+  ],
   spawnableAgents: [],
   systemPrompt: `# Persona: Reid the Researcher
 
@@ -44,6 +49,6 @@ Always end your response with the end_turn tool.
 {CODEBUFF_GIT_CHANGES_PROMPT}`,
   instructionsPrompt: `Research the topic thoroughly and provide comprehensive findings. Make sure to summarize your notes.`,
   stepPrompt: `Make sure to summarize your notes.`,
-}
+};
 
-export default definition
+export default definition;

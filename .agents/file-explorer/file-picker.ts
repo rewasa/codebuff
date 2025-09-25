@@ -1,18 +1,14 @@
-import { ToolCall } from 'types/agent-definition'
-import { publisher } from '../constants'
+import { AGENT_PERSONAS } from '@codebuff/common/constants/agents';
 
-import {
-  PLACEHOLDER,
-  type SecretAgentDefinition,
-} from '../types/secret-agent-definition'
+import type { SecretAgentDefinition } from '../types/secret-agent-definition';
+import type { ModelName, ToolCall } from 'types/agent-definition';
 
-const definition: SecretAgentDefinition = {
-  id: 'file-picker',
-  displayName: 'Fletcher the File Fetcher',
-  publisher,
-  model: 'x-ai/grok-4-fast',
-  spawnerPrompt:
-    'Spawn to find relevant files in a codebase related to the prompt. Cannot do string searches on the codebase.',
+export const filePicker = (
+  model: ModelName,
+): Omit<SecretAgentDefinition, 'id'> => ({
+  model,
+  displayName: AGENT_PERSONAS['file-picker'].displayName,
+  spawnerPrompt: AGENT_PERSONAS['file-picker'].purpose,
   inputSchema: {
     prompt: {
       type: 'string',
@@ -24,7 +20,7 @@ const definition: SecretAgentDefinition = {
   toolNames: ['find_files'],
   spawnableAgents: [],
 
-  systemPrompt: `You are an expert at finding relevant files in a codebase. ${PLACEHOLDER.FILE_TREE_PROMPT}`,
+  systemPrompt: `You are an expert at finding relevant files in a codebase.`,
   instructionsPrompt: `
 Provide the locations in the codebase that could be helpful. Focus on the files that are most relevant to the user prompt.
 In your report, please give an extremely concise analysis that includes the full paths of files that are relevant and (very briefly) how they could be useful.
@@ -35,9 +31,7 @@ In your report, please give an extremely concise analysis that includes the full
     yield {
       toolName: 'find_files',
       input: { prompt: prompt ?? '' },
-    } satisfies ToolCall
-    yield 'STEP_ALL'
+    } satisfies ToolCall;
+    yield 'STEP_ALL';
   },
-}
-
-export default definition
+});

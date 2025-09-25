@@ -1,6 +1,6 @@
-import { publisher } from './constants'
+import { publisher } from './constants';
 
-import type { AgentDefinition } from './types/agent-definition'
+import type { AgentDefinition } from './types/agent-definition';
 
 const definition: AgentDefinition = {
   id: 'knowledge-keeper',
@@ -16,7 +16,10 @@ const definition: AgentDefinition = {
     'spawn_agents',
     'end_turn',
   ],
-  spawnableAgents: ['file-picker', 'researcher'],
+  spawnableAgents: [
+    'file-picker',
+    'researcher',
+  ],
 
   inputSchema: {
     prompt: {
@@ -46,6 +49,6 @@ Always start by reading existing knowledge.md files and documentation. Focus on 
 
   stepPrompt:
     'Continue your knowledge management work. Focus on the most impactful improvements and always end with the end_turn tool.',
-}
+};
 
-export default definition
+export default definition;

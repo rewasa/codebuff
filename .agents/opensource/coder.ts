@@ -1,6 +1,6 @@
-import { publisher } from '../constants'
+import { publisher } from '../constants';
 
-import type { AgentDefinition } from '../types/agent-definition'
+import type { AgentDefinition } from '../types/agent-definition';
 
 const definition: AgentDefinition = {
   id: 'oss-model-coder',
@@ -67,6 +67,6 @@ You are an expert coding specialist, focused exclusively on code implementation,
 - Make minimal, focused changes that accomplish the specific task
 - Use the exact tool names available to you`,
   stepPrompt: `Focus on the coding task. Read files, understand the context, then implement the solution. End with the end_turn tool when complete.`,
-}
+};
 
-export default definition
+export default definition;

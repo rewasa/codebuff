@@ -1,13 +1,13 @@
-import { AGENT_PERSONAS } from '@codebuff/common/constants/agents'
+import { AGENT_PERSONAS } from '@codebuff/common/constants/agents';
 
 import {
   baseAgentAgentStepPrompt,
   baseAgentSystemPrompt,
   baseAgentUserInputPrompt,
-} from './base-prompts'
+} from '../prompts';
 
-import type { SecretAgentDefinition } from '../types/secret-agent-definition'
-import type { ModelName } from 'types/agent-definition'
+import type { SecretAgentDefinition } from '../types/secret-agent-definition';
+import type { ModelName } from 'types/agent-definition';
 
 export const base = (
   model: ModelName,
@@ -40,19 +40,19 @@ export const base = (
     'write_file',
     'lookup_agent_info',
     'spawn_agents',
+    'spawn_agent_inline',
     'add_subgoal',
-    'update_subgoal',
     'browser_logs',
     'code_search',
+    'end_turn',
     'read_files',
     'think_deeply',
-    'end_turn',
+    'update_subgoal',
   ],
   spawnableAgents: [
     'file-explorer',
-    'find-all-referencer',
-    'researcher-web',
-    'researcher-docs',
+    'file-picker',
+    'researcher',
     'thinker',
     'reviewer',
     'context-pruner',
@@ -72,10 +72,10 @@ export const base = (
           params: params ?? {},
         },
         includeToolCall: false,
-      } as any
+      } as any;
 
-      const { stepsComplete } = yield 'STEP'
-      if (stepsComplete) break
+      const { stepsComplete } = yield 'STEP';
+      if (stepsComplete) break;
     }
   },
-})
+});

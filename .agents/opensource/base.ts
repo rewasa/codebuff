@@ -1,6 +1,6 @@
-import { publisher } from '../constants'
+import { publisher } from '../constants';
 
-import type { SecretAgentDefinition } from '../types/secret-agent-definition'
+import type { SecretAgentDefinition } from '../types/secret-agent-definition';
 
 const definition: SecretAgentDefinition = {
   id: 'oss-model-base',
@@ -73,6 +73,6 @@ You are working on a project over multiple "iterations," reminiscent of the movi
 - Use only the exact tool names listed above
 - Focus on orchestration and coordination, not implementation`,
   stepPrompt: `Continue working on the user's request. Use your tools and spawn spawnableAgents as needed.`,
-}
+};
 
-export default definition
+export default definition;

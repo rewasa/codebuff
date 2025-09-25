@@ -1,5 +1,5 @@
-import { publisher } from '../constants'
-import type { AgentDefinition } from '../types/agent-definition'
+import { publisher } from '../constants';
+import type { AgentDefinition } from '../types/agent-definition';
 
 const definition: AgentDefinition = {
   id: 'gemini-thinker',
@@ -29,6 +29,6 @@ const definition: AgentDefinition = {
 
   instructionsPrompt:
     'You are a creative thinker using Gemini Pro. Approach the given prompt with innovation and creativity. Think outside the box, consider unconventional angles, and explore novel connections. Generate fresh insights and imaginative solutions while maintaining logical coherence. Your goal is to bring a unique creative perspective to complement other analytical approaches.',
-}
+};
 
-export default definition
+export default definition;

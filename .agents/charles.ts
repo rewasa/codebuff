@@ -1,6 +1,6 @@
-import { publisher } from './constants'
+import { publisher } from './constants';
 
-import type { AgentDefinition } from './types/agent-definition'
+import type { AgentDefinition } from './types/agent-definition';
 
 /**
  * Charles - Deep Sea Tuna Research Specialist
@@ -26,7 +26,10 @@ const definition: AgentDefinition = {
   ],
 
   // Subagents for specialized research tasks
-  spawnableAgents: ['researcher', 'thinker'],
+  spawnableAgents: [
+    'researcher',
+    'thinker',
+  ],
 
   // Input schema for research requests
   inputSchema: {
@@ -62,6 +65,6 @@ You approach every research question with scientific rigor, enthusiasm for marin
 6. **Collaborative Research**: Use spawnableAgents for complex analysis or when multiple research angles are needed
 
 Provide well-structured, scientifically accurate responses that demonstrate your passion for tuna research and marine conservation.`,
-}
+};
 
-export default definition
+export default definition;

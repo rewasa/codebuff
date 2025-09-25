@@ -1,6 +1,6 @@
-import { publisher } from './constants'
+import { publisher } from './constants';
 
-import type { AgentDefinition } from './types/agent-definition'
+import type { AgentDefinition } from './types/agent-definition';
 
 const definition: AgentDefinition = {
   id: 'brainstormer',
@@ -17,8 +17,14 @@ const definition: AgentDefinition = {
   },
   outputMode: 'last_message',
 
-  toolNames: ['spawn_agents', 'end_turn'],
-  spawnableAgents: ['thinker', 'researcher'],
+  toolNames: [
+    'spawn_agents',
+    'end_turn',
+  ],
+  spawnableAgents: [
+    'thinker',
+    'researcher',
+  ],
 
   spawnerPrompt:
     'Acts as a creative thought partner, generating ideas and exploring alternative viewpoints to help think through problems.',
@@ -57,6 +63,6 @@ Remember: Your goal is to expand thinking, not to provide definitive answers. He
 
   instructionsPrompt:
     'Act as a creative thought partner. Generate multiple perspectives, challenge assumptions, explore alternatives, and ask probing questions to help think through problems more thoroughly.',
-}
+};
 
-export default definition
+export default definition;

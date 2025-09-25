@@ -1,5 +1,5 @@
-import type { SecretAgentDefinition } from '../types/secret-agent-definition'
-import { publisher } from '../constants'
+import type { SecretAgentDefinition } from '../types/secret-agent-definition';
+import { publisher } from '../constants';
 
 const definition: SecretAgentDefinition = {
   id: 'researcher-web',
@@ -30,9 +30,9 @@ Then, write up a report that includes key findings, relevant insights, and actio
     yield {
       toolName: 'web_search' as const,
       input: { query: prompt || '', depth: 'standard' as const },
-    }
-    yield 'STEP_ALL'
+    };
+    yield 'STEP_ALL';
   },
-}
+};
 
-export default definition
+export default definition;

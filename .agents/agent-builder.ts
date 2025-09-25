@@ -1,18 +1,18 @@
-import { readFileSync } from 'fs'
-import { join } from 'path'
+import { readFileSync } from 'fs';
+import { join } from 'path';
 
-import { publisher } from './constants'
+import { publisher } from './constants';
 
-import type { AgentDefinition } from './types/agent-definition'
+import type { AgentDefinition } from './types/agent-definition';
 
 const agentDefinitionContent = readFileSync(
   join(__dirname, 'types', 'agent-definition.ts'),
   'utf8',
-)
+);
 const toolsDefinitionContent = readFileSync(
   join(__dirname, 'types', 'tools.ts'),
   'utf8',
-)
+);
 
 const researcherDocExampleContent = readFileSync(
   join(__dirname, 'researcher', 'researcher-docs.ts'),
@@ -146,6 +146,6 @@ You may create a single agent definition, or a main agent definition as well as 
 You can also make changes to existing agent definitions if asked.
 
 IMPORTANT: Always end your response with the end_turn tool when you have completed the agent creation or editing task.`,
-}
+};
 
-export default definition
+export default definition;

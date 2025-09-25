@@ -1,4 +1,4 @@
-import type { AgentDefinition } from './types/agent-definition'
+import type { AgentDefinition } from './types/agent-definition';
 
 const definition: AgentDefinition = {
   id: 'simple-code-reviewer',
@@ -21,6 +21,6 @@ const definition: AgentDefinition = {
   3. Spawn a file explorer to find all related and relevant files.
   4. Read all the files that could be relevant to the changes.
   5. Review the changes and suggest improvements.`,
-}
+};
 
-export default definition
+export default definition;

@@ -1,10 +1,10 @@
-import type { SecretAgentDefinition } from '../types/secret-agent-definition'
-import { publisher } from '../constants'
+import type { SecretAgentDefinition } from '../types/secret-agent-definition';
+import { publisher } from '../constants';
 
 const definition: SecretAgentDefinition = {
   id: 'researcher-docs',
   publisher,
-  model: 'x-ai/grok-4-fast',
+  model: 'x-ai/grok-4-fast:free',
   displayName: 'Doc',
   spawnerPrompt: `Expert at reading technical documentation of major public libraries and frameworks to find relevant information. (e.g. React, MongoDB, Postgres, etc.)`,
   inputSchema: {
@@ -25,6 +25,6 @@ const definition: SecretAgentDefinition = {
 2. Repeat the read_docs tool call until you have gathered all the relevant documentation.
 3. Write up a comprehensive report of the documentation. Include key findings, relevant insights, and actionable recommendations.
   `.trim(),
-}
+};
 
-export default definition
+export default definition;

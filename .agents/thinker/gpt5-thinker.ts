@@ -1,5 +1,5 @@
-import type { AgentDefinition } from '../types/agent-definition'
-import { publisher } from '../constants'
+import type { AgentDefinition } from '../types/agent-definition';
+import { publisher } from '../constants';
 
 const definition: AgentDefinition = {
   id: 'gpt5-thinker',
@@ -28,5 +28,5 @@ const definition: AgentDefinition = {
 
   instructionsPrompt:
     'You are a deep thinker using GPT-5 with focused reasoning. Think hard about the given prompt and provide insightful analysis. Dive deep into the topic, explore multiple angles, and generate meaningful insights. Your goal is to offer a perspective that contributes valuable depth to the overall analysis.',
-}
-export default definition
+};
+export default definition;

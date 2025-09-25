@@ -1,5 +1,5 @@
-import { publisher } from '../constants'
-import type { AgentDefinition } from '../types/agent-definition'
+import { publisher } from '../constants';
+import type { AgentDefinition } from '../types/agent-definition';
 
 const definition: AgentDefinition = {
   id: 'sonnet-thinker',
@@ -27,8 +27,8 @@ const definition: AgentDefinition = {
 
   handleSteps: function* ({ prompt, params }) {
     // One step only
-    yield 'STEP'
+    yield 'STEP';
   },
-}
+};
 
-export default definition
+export default definition;
