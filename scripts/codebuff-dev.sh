@@ -91,8 +91,9 @@ show_status() {
 
 # Function to ensure .agents symlink
 setup_agents_symlink() {
+    local target_dir="${1:-$START_DIR}"
     local AGENTS_SRC="$ROOT_DIR/.agents"
-    local AGENTS_DST="$START_DIR/.agents"
+    local AGENTS_DST="$target_dir/.agents"
     
     if [ -d "$AGENTS_SRC" ]; then
         # Recreate broken symlink
@@ -172,9 +173,10 @@ show_help() {
 
 # Function to validate directory
 validate_directory() {
-    # Check if we're in a git repository
-    if ! git rev-parse --is-inside-work-tree >/dev/null 2>&1; then
-        echo -e "${RED}Error: Not in a git repository${NC}"
+    local target_dir="${1:-$PWD}"
+    # Check if the target directory is a git repository
+    if ! (cd "$target_dir" && git rev-parse --is-inside-work-tree >/dev/null 2>&1); then
+        echo -e "${RED}Error: $target_dir is not in a git repository${NC}"
         exit 1
     fi
 }
@@ -308,7 +310,7 @@ main() {
     
     if [ $# -eq 0 ]; then
         # Wenn keine Argumente, starte start-bin im codebuff-fork Verzeichnis mit cwd
-                cd "$ROOT_DIR" && DISABLE_GOOGLE_CLOUD=true infisical run -- bun --cwd "$ROOT_DIR/npm-app" start-bin -- --cwd "$cwd"
+        cd "$ROOT_DIR" && DISABLE_GOOGLE_CLOUD=true infisical run -- bun --cwd "$ROOT_DIR/npm-app" start-bin -- --cwd "$cwd"
         exit 0
     fi
     
@@ -316,12 +318,12 @@ main() {
     
     case $command in
         start-bin)
-            validate_directory
-            setup_agents_symlink
+            validate_directory "$cwd"
+            setup_agents_symlink "$cwd"
             ensure_services
             show_status
             echo -e "\n${YELLOW}Starting Codebuff in $(basename "$cwd")...${NC}"
-                        cd "$ROOT_DIR" && DISABLE_GOOGLE_CLOUD=true infisical run -- bun --cwd "$ROOT_DIR/npm-app" start-bin -- --cwd "$cwd"
+            cd "$ROOT_DIR" && DISABLE_GOOGLE_CLOUD=true infisical run -- bun --cwd "$ROOT_DIR/npm-app" start-bin -- --cwd "$cwd"
             ;;
         start)
             setup_agents_symlink
@@ -342,13 +344,13 @@ main() {
         help)
             show_help
             ;;
+        install)
+            install_global_symlink
+            ;;
         *)
             echo -e "${RED}Unknown command: $command${NC}"
             show_help
             exit 1
-            ;;
-        install)
-            install_global_symlink
             ;;
     esac
 }
