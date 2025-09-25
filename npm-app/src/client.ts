@@ -969,19 +969,18 @@ export class Client {
   private formatLogMessage(level: string, data: any, message?: string): string {
     const timestamp = new Date().toISOString().substring(11, 23) // HH:MM:SS.mmm
     const levelColors = { debug: blue, info: green, warn: yellow, error: red }
-    const levelColor =
-      levelColors[level as keyof typeof levelColors] || ((s: string) => s)
-
+    const levelColor = levelColors[level as keyof typeof levelColors] || ((s: string) => s)
+    
     const timeTag = `[${timestamp}]`
     const levelTag = levelColor(`[${level.toUpperCase()}]`)
     const dataStr = this.serializeLogData(data)
-
+    
     return [timeTag, levelTag, message, dataStr].filter(Boolean).join(' ')
   }
 
   private serializeLogData(data: any): string {
     if (data === undefined || data === null) return ''
-
+    
     if (typeof data === 'object') {
       try {
         return JSON.stringify(data, null, 2)
@@ -989,7 +988,7 @@ export class Client {
         return String(data)
       }
     }
-
+    
     return String(data)
   }
 

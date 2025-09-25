@@ -101,7 +101,7 @@ const HandleStepsSchema = functionSchema(
         prompt: z.string().optional(),
         params: z.any().optional(),
       }),
-      LoggerSchema.optional(),
+      LoggerSchema.optional(), // Logger object with proper typing
     ],
     output: z.any(),
   }),

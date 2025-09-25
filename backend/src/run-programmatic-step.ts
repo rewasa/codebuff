@@ -83,7 +83,7 @@ export async function runProgrammaticStep(
       stepNumber,
       stepsComplete,
     },
-    'runProgrammaticStep: Starting programmatic step execution'
+    'runProgrammaticStep: Starting programmatic step execution',
   )
 
   if (!template.handleSteps) {
@@ -98,10 +98,10 @@ export async function runProgrammaticStep(
   let generator = runIdToGenerator[agentState.runId]
   let sandbox = sandboxManager.getSandbox(agentState.runId)
 
-  // Check if we need to initialize a generator
+  // Check if we need to initialize a generator (either native or QuickJS-based)
   if (!generator && !sandbox) {
-    const createLogMethod =
-      (level: 'debug' | 'info' | 'warn' | 'error') =>
+    // Create a streaming logger that sends logs to the client
+    const createLogMethod = (level: 'debug' | 'info' | 'warn' | 'error') => 
       (data: any, msg?: string) => {
         logger[level](data, msg) // Log to backend
         sendAction(ws, {
@@ -127,7 +127,7 @@ export async function runProgrammaticStep(
           agentType: template.id,
           runId: agentState.runId,
         },
-        'runProgrammaticStep: Initializing QuickJS sandbox for string-based generator'
+        'runProgrammaticStep: Initializing QuickJS sandbox for string-based generator',
       )
       // Initialize QuickJS sandbox for string-based generator
       sandbox = await sandboxManager.getOrCreateSandbox(
@@ -147,7 +147,7 @@ export async function runProgrammaticStep(
           agentType: template.id,
           runId: agentState.runId,
         },
-        'runProgrammaticStep: Initializing native JavaScript generator'
+        'runProgrammaticStep: Initializing native JavaScript generator',
       )
       // Initialize native generator
       generator = (template.handleSteps as any)(
@@ -165,7 +165,7 @@ export async function runProgrammaticStep(
           runId: agentState.runId,
           generatorInitialized: !!generator,
         },
-        'runProgrammaticStep: Native generator initialized successfully'
+        'runProgrammaticStep: Native generator initialized successfully',
       )
     }
   }
@@ -236,7 +236,7 @@ export async function runProgrammaticStep(
           usingGenerator: !!generator,
           stepsComplete,
         },
-        'runProgrammaticStep: About to execute generator step'
+        'runProgrammaticStep: About to execute generator step',
       )
 
       const result = sandbox
@@ -258,7 +258,7 @@ export async function runProgrammaticStep(
           resultDone: result.done,
           resultValue: result.value,
         },
-        'runProgrammaticStep: Generator step executed, got result'
+        'runProgrammaticStep: Generator step executed, got result',
       )
 
       if (result.done) {
