@@ -54,6 +54,16 @@ export type StepGenerator = Generator<
 export type StepHandler<
   P = string | undefined,
   T = Record<string, any> | undefined,
-> = (params: { agentState: AgentState; prompt: P; params: T }) => StepGenerator
+> = (
+  params: { agentState: AgentState; prompt: P; params: T },
+  logger: Logger,
+) => StepGenerator
+
+export interface Logger {
+  debug: (data: any, msg?: string) => void
+  info: (data: any, msg?: string) => void
+  warn: (data: any, msg?: string) => void
+  error: (data: any, msg?: string) => void
+}
 
 export { PublicAgentState }
