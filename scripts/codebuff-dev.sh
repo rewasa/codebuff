@@ -51,17 +51,16 @@ wait_for_service() {
     local max_attempts=60
     local attempt=1
 
-    echo -n "Waiting for $name to be ready "
+    echo "Waiting for $name to be ready..."
     while ! curl -sf "http://localhost:$port/healthz" >/dev/null 2>&1 && ! curl -sf "http://localhost:$port" >/dev/null 2>&1; do
         if [ $attempt -ge $max_attempts ]; then
-            echo -e "\n${RED}Failed to start $name after $max_attempts attempts${NC}"
+            echo -e "${RED}Failed to start $name after $max_attempts attempts${NC}"
             return 1
         fi
-        echo -n "."
         sleep 1
         ((attempt++))
     done
-    echo -e "\n${GREEN}$name is ready!${NC}"
+    echo -e "${GREEN}$name is ready!${NC}"
 }
 
 # Function to display service status
@@ -130,10 +129,14 @@ start_service() {
     local port=$2
     local command=$3
     local return_dir="$PWD"
-    
+
     if ! check_port "$port"; then
         echo -e "${YELLOW}Starting $service...${NC}"
-        cd "$ROOT_DIR" && DISABLE_GOOGLE_CLOUD=true $INFISICAL_PREFIX $command &
+        local log_file="backend.log"
+        if [ "$service" = "Web" ]; then
+            log_file="web.log"
+        fi
+        cd "$ROOT_DIR" && DISABLE_GOOGLE_CLOUD=true $INFISICAL_PREFIX $command >> "$ROOT_DIR/$log_file" 2>&1 &
         cd "$return_dir"
         sleep 2 # Give it a moment to start
         wait_for_service "$service" "$port"
@@ -183,7 +186,7 @@ ensure_services() {
         # Start database if not running
     if ! docker ps --format '{{.Names}}' | grep -q "^manicode-db-1$"; then
         echo -e "${YELLOW}Starting database...${NC}"
-        (cd "$ROOT_DIR" && DEBUG=* DISABLE_GOOGLE_CLOUD=true infisical run -- bun run start-db)
+        (cd "$ROOT_DIR" && DISABLE_GOOGLE_CLOUD=true infisical run -- bun run start-db >> "$ROOT_DIR/db.log" 2>&1)
         
         # Wait for database to be ready
         sleep 5
@@ -305,8 +308,7 @@ main() {
     
     if [ $# -eq 0 ]; then
         # Wenn keine Argumente, starte start-bin im codebuff-fork Verzeichnis mit cwd
-        echo -e "${YELLOW}Full logs enabled...${NC}"
-        cd "$ROOT_DIR" && DEBUG=* DISABLE_GOOGLE_CLOUD=true infisical run -- bun --cwd "$ROOT_DIR/npm-app" start-bin -- --cwd "$cwd"
+                cd "$ROOT_DIR" && DISABLE_GOOGLE_CLOUD=true infisical run -- bun --cwd "$ROOT_DIR/npm-app" start-bin -- --cwd "$cwd"
         exit 0
     fi
     
@@ -319,8 +321,7 @@ main() {
             ensure_services
             show_status
             echo -e "\n${YELLOW}Starting Codebuff in $(basename "$cwd")...${NC}"
-            echo -e "${YELLOW}Full logs enabled...${NC}"
-            cd "$ROOT_DIR" && DEBUG=* DISABLE_GOOGLE_CLOUD=true infisical run -- bun --cwd "$ROOT_DIR/npm-app" start-bin -- --cwd "$cwd"
+                        cd "$ROOT_DIR" && DISABLE_GOOGLE_CLOUD=true infisical run -- bun --cwd "$ROOT_DIR/npm-app" start-bin -- --cwd "$cwd"
             ;;
         start)
             setup_agents_symlink

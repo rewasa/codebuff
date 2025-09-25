@@ -1,4 +1,4 @@
-import editor from '../../editor/editor';
+import editor from '../editor';
 
 import type { SecretAgentDefinition } from '../../types/secret-agent-definition';
 
