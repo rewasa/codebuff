@@ -951,6 +951,46 @@ export class Client {
       // Refresh display if we're currently viewing this agent
       refreshSubagentDisplay(agentId)
     })
+
+    // Handle handleSteps log streaming
+    this.webSocket.subscribe('handlesteps-log-chunk', (action) => {
+      const { agentId, level, data, message } = action
+
+      // Format the log message for display
+      const formattedMessage = this.formatLogMessage(level, data, message)
+
+      // Display the log message immediately
+      if (formattedMessage) {
+        process.stdout.write(formattedMessage + '\n')
+      }
+    })
+  }
+
+  private formatLogMessage(level: string, data: any, message?: string): string {
+    const timestamp = new Date().toISOString().substring(11, 23) // HH:MM:SS.mmm
+    const levelColors = { debug: blue, info: green, warn: yellow, error: red }
+    const levelColor =
+      levelColors[level as keyof typeof levelColors] || ((s: string) => s)
+
+    const timeTag = `[${timestamp}]`
+    const levelTag = levelColor(`[${level.toUpperCase()}]`)
+    const dataStr = this.serializeLogData(data)
+
+    return [timeTag, levelTag, message, dataStr].filter(Boolean).join(' ')
+  }
+
+  private serializeLogData(data: any): string {
+    if (data === undefined || data === null) return ''
+
+    if (typeof data === 'object') {
+      try {
+        return JSON.stringify(data, null, 2)
+      } catch {
+        return String(data)
+      }
+    }
+
+    return String(data)
   }
 
   private showUsageWarning() {
