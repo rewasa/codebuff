@@ -1,6 +1,6 @@
-import type { AgentDefinition } from './agent-definition'
-import type * as Tools from './tools'
-export type { Tools }
+import type { AgentDefinition } from './agent-definition';
+import type * as Tools from './tools';
+export type { Tools };
 
 export type AllToolNames =
   | Tools.ToolName
@@ -8,12 +8,12 @@ export type AllToolNames =
   | 'browser_logs'
   | 'create_plan'
   | 'spawn_agent_inline'
-  | 'update_subgoal'
+  | 'update_subgoal';
 
 export interface SecretAgentDefinition
   extends Omit<AgentDefinition, 'toolNames'> {
   /** Tools this agent can use. */
-  toolNames?: AllToolNames[]
+  toolNames?: AllToolNames[];
 }
 
 // ============================================================================
@@ -35,17 +35,20 @@ const placeholderNames = [
   'TOOLS_PROMPT',
   'USER_CWD',
   'USER_INPUT_PROMPT',
-] as const
+] as const;
 
 type PlaceholderType<T extends readonly string[]> = {
-  [K in T[number]]: `{CODEBUFF_${K}}`
-}
+  [K in T[number]]: `{CODEBUFF_${K}}`;
+};
 
 export const PLACEHOLDER = Object.fromEntries(
-  placeholderNames.map((name) => [name, `{CODEBUFF_${name}}` as const]),
-) as PlaceholderType<typeof placeholderNames>
-export type PlaceholderValue = (typeof PLACEHOLDER)[keyof typeof PLACEHOLDER]
-export const placeholderValues = Object.values(PLACEHOLDER)
+  placeholderNames.map((name) => [
+    name,
+    `{CODEBUFF_${name}}` as const,
+  ]),
+) as PlaceholderType<typeof placeholderNames>;
+export type PlaceholderValue = (typeof PLACEHOLDER)[keyof typeof PLACEHOLDER];
+export const placeholderValues = Object.values(PLACEHOLDER);
 
 // ============================================================================
 // Agent Template Types (ported from common/src/types/session-state.ts)
@@ -75,16 +78,19 @@ export const AgentTemplateTypeList = [
   'reviewer',
   'agent_builder',
   'example_programmatic',
-] as const
+] as const;
 
 type UnderscoreToDash<S extends string> = S extends `${infer L}_${infer R}`
   ? `${L}-${UnderscoreToDash<R>}`
-  : S
+  : S;
 
 export const AgentTemplateTypes = Object.fromEntries(
-  AgentTemplateTypeList.map((name) => [name, name.replaceAll('_', '-')]),
-) as { [K in (typeof AgentTemplateTypeList)[number]]: UnderscoreToDash<K> }
+  AgentTemplateTypeList.map((name) => [
+    name,
+    name.replaceAll('_', '-'),
+  ]),
+) as { [K in (typeof AgentTemplateTypeList)[number]]: UnderscoreToDash<K> };
 
 export type AgentTemplateType =
   | (typeof AgentTemplateTypeList)[number]
-  | (string & {})
+  | (string & {});

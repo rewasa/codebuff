@@ -1,7 +1,7 @@
-import { AGENT_PERSONAS } from '@codebuff/common/constants/agents'
+import { AGENT_PERSONAS } from '@codebuff/common/constants/agents';
 
-import type { SecretAgentDefinition } from '../types/secret-agent-definition'
-import type { Model } from '@codebuff/common/old-constants'
+import type { SecretAgentDefinition } from '../types/secret-agent-definition';
+import type { Model } from '@codebuff/common/old-constants';
 
 export const researcher = (
   model: Model,
@@ -18,7 +18,11 @@ export const researcher = (
   },
   outputMode: 'last_message',
   includeMessageHistory: false,
-  toolNames: ['web_search', 'read_docs', 'end_turn'],
+  toolNames: [
+    'web_search',
+    'read_docs',
+    'end_turn',
+  ],
   spawnableAgents: [],
 
   systemPrompt: `You are an expert researcher who can search the web and read documentation to find relevant information. Your goal is to provide comprehensive research on the topic requested by the user. Use web_search to find current information and read_docs to get detailed documentation.`,
@@ -32,7 +36,7 @@ In your report, include key findings, relevant insights, and actionable recommen
     yield {
       toolName: 'web_search' as const,
       input: { query: prompt || '', depth: 'standard' as const },
-    }
-    yield 'STEP_ALL'
+    };
+    yield 'STEP_ALL';
   },
-})
+});

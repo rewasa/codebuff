@@ -1,16 +1,25 @@
 import {
   PLACEHOLDER,
   type SecretAgentDefinition,
-} from './types/secret-agent-definition'
-import { publisher } from './constants'
+} from '../types/secret-agent-definition';
+import { publisher } from '../constants';
 
 const definition: SecretAgentDefinition = {
   id: 'scout',
   publisher,
   model: 'openai/gpt-5-chat',
   displayName: 'Lewis & Clark',
-  spawnableAgents: ['file-explorer', 'web-researcher', 'docs-researcher'],
-  toolNames: ['spawn_agents', 'read_files', 'code_search', 'end_turn'],
+  spawnableAgents: [
+    'file-explorer',
+    'web-researcher',
+    'docs-researcher',
+  ],
+  toolNames: [
+    'spawn_agents',
+    'read_files',
+    'code_search',
+    'end_turn',
+  ],
 
   inputSchema: {
     prompt: {
@@ -44,6 +53,6 @@ In your thinking, consider which agent(s) to spawn.
   - A summary of the situation at the end.
   - Follow up questions.
 - Use the end_turn tool.`,
-}
+};
 
-export default definition
+export default definition;

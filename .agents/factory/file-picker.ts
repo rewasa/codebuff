@@ -1,7 +1,7 @@
-import { AGENT_PERSONAS } from '@codebuff/common/constants/agents'
+import { AGENT_PERSONAS } from '@codebuff/common/constants/agents';
 
-import type { SecretAgentDefinition } from '../types/secret-agent-definition'
-import type { ModelName, ToolCall } from 'types/agent-definition'
+import type { SecretAgentDefinition } from '../types/secret-agent-definition';
+import type { ModelName, ToolCall } from 'types/agent-definition';
 
 export const filePicker = (
   model: ModelName,
@@ -31,7 +31,7 @@ In your report, please give an extremely concise analysis that includes the full
     yield {
       toolName: 'find_files',
       input: { prompt: prompt ?? '' },
-    } satisfies ToolCall
-    yield 'STEP_ALL'
+    } satisfies ToolCall;
+    yield 'STEP_ALL';
   },
-})
+});

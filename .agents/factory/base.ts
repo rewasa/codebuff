@@ -1,13 +1,13 @@
-import { AGENT_PERSONAS } from '@codebuff/common/constants/agents'
+import { AGENT_PERSONAS } from '@codebuff/common/constants/agents';
 
 import {
   baseAgentAgentStepPrompt,
   baseAgentSystemPrompt,
   baseAgentUserInputPrompt,
-} from '../prompts'
+} from '../prompts';
 
-import type { SecretAgentDefinition } from '../types/secret-agent-definition'
-import type { ModelName } from 'types/agent-definition'
+import type { SecretAgentDefinition } from '../types/secret-agent-definition';
+import type { ModelName } from 'types/agent-definition';
 
 export const base = (
   model: ModelName,
@@ -72,10 +72,10 @@ export const base = (
           params: params ?? {},
         },
         includeToolCall: false,
-      } as any
+      } as any;
 
-      const { stepsComplete } = yield 'STEP'
-      if (stepsComplete) break
+      const { stepsComplete } = yield 'STEP';
+      if (stepsComplete) break;
     }
   },
-})
+});

@@ -1,7 +1,7 @@
-import { publisher } from './constants.ts'
-import { base } from './factory/base.ts'
+import { publisher } from './constants.ts';
+import { base } from './factory/base.ts';
 
-import type { SecretAgentDefinition } from './types/secret-agent-definition.ts'
+import type { SecretAgentDefinition } from './types/secret-agent-definition.ts';
 
 const definition: SecretAgentDefinition = {
   id: 'base-lite',
@@ -31,6 +31,6 @@ const definition: SecretAgentDefinition = {
     'docs-researcher',
     'context-pruner',
   ],
-}
+};
 
-export default definition
+export default definition;

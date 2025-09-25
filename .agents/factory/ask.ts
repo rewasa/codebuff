@@ -1,17 +1,17 @@
-import { AGENT_PERSONAS } from '@codebuff/common/constants/agents'
+import { AGENT_PERSONAS } from '@codebuff/common/constants/agents';
 
 import {
   askAgentAgentStepPrompt,
   askAgentSystemPrompt,
   askAgentUserInputPrompt,
-} from '../prompts'
+} from '../prompts';
 import {
   AgentTemplateTypes,
   PLACEHOLDER,
-} from '../types/secret-agent-definition'
+} from '../types/secret-agent-definition';
 
-import type { SecretAgentDefinition } from '../types/secret-agent-definition'
-import type { Model } from '@codebuff/common/old-constants'
+import type { SecretAgentDefinition } from '../types/secret-agent-definition';
+import type { Model } from '@codebuff/common/old-constants';
 
 export const ask = (model: Model): Omit<SecretAgentDefinition, 'id'> => ({
   model,
@@ -43,4 +43,4 @@ export const ask = (model: Model): Omit<SecretAgentDefinition, 'id'> => ({
 ` + askAgentSystemPrompt(model),
   instructionsPrompt: askAgentUserInputPrompt(model),
   stepPrompt: askAgentAgentStepPrompt(model),
-})
+});

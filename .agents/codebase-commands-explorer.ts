@@ -1,4 +1,4 @@
-import type { AgentDefinition } from './types/agent-definition'
+import type { AgentDefinition } from './types/agent-definition';
 
 const definition: AgentDefinition = {
   id: 'codebase-commands-explorer',
@@ -13,7 +13,10 @@ const definition: AgentDefinition = {
 
   spawnerPrompt: `Analyzes any project's codebase to comprehensively discover all commands needed to build, test, and run the project. Provides detailed analysis of project structure, tech stack, and working commands with confidence scores.`,
 
-  toolNames: ['spawn_agents', 'set_output'],
+  toolNames: [
+    'spawn_agents',
+    'set_output',
+  ],
   spawnableAgents: [
     'codebuff/file-explorer@0.0.4',
     'codebuff/read-only-commander-lite@0.0.1',
@@ -114,7 +117,12 @@ const definition: AgentDefinition = {
               description: 'Required environment or conditions',
             },
           },
-          required: ['command', 'description', 'category', 'confidenceScore'],
+          required: [
+            'command',
+            'description',
+            'category',
+            'confidenceScore',
+          ],
         },
       },
       setupRequirements: {
@@ -133,11 +141,19 @@ const definition: AgentDefinition = {
             },
             priority: {
               type: 'string',
-              enum: ['critical', 'recommended', 'optional'],
+              enum: [
+                'critical',
+                'recommended',
+                'optional',
+              ],
               description: 'Priority level',
             },
           },
-          required: ['requirement', 'commands', 'priority'],
+          required: [
+            'requirement',
+            'commands',
+            'priority',
+          ],
         },
       },
       cicdAnalysis: {
@@ -160,7 +176,11 @@ const definition: AgentDefinition = {
               'CI/CD platforms detected (GitHub Actions, GitLab CI, etc.)',
           },
         },
-        required: ['ciFilesFound', 'officialCommands', 'platforms'],
+        required: [
+          'ciFilesFound',
+          'officialCommands',
+          'platforms',
+        ],
       },
     },
     required: [
@@ -222,6 +242,6 @@ const definition: AgentDefinition = {
 - Discover deployment and release commands
 
 Provide a comprehensive, structured output that gives developers everything they need to understand and work with the codebase immediately.`,
-}
+};
 
-export default definition
+export default definition;

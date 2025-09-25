@@ -1,9 +1,9 @@
-import { publisher } from './constants'
+import { publisher } from './constants';
 
 import type {
   AgentDefinition,
   AgentStepContext,
-} from './types/agent-definition'
+} from './types/agent-definition';
 
 const definition: AgentDefinition = {
   id: 'git-committer',
@@ -11,7 +11,12 @@ const definition: AgentDefinition = {
   model: 'openai/gpt-5-nano',
 
   publisher,
-  toolNames: ['read_files', 'run_terminal_command', 'add_message', 'end_turn'],
+  toolNames: [
+    'read_files',
+    'run_terminal_command',
+    'add_message',
+    'end_turn',
+  ],
 
   inputSchema: {
     prompt: {
@@ -39,14 +44,14 @@ const definition: AgentDefinition = {
       input: {
         command: 'git diff',
       },
-    }
+    };
 
     yield {
       toolName: 'run_terminal_command',
       input: {
         command: 'git log --oneline -10',
       },
-    }
+    };
 
     // Step 2: Put words in AI's mouth so it will read files next.
     yield {
@@ -57,10 +62,10 @@ const definition: AgentDefinition = {
           "I've analyzed the git diff and recent commit history. Now I'll read any relevant files to better understand the context of these changes.",
       },
       includeToolCall: false,
-    }
+    };
 
     // Step 3: Let AI generate a step to decide which files to read.
-    yield 'STEP'
+    yield 'STEP';
 
     // Step 4: Put words in AI's mouth to analyze the changes and create a commit.
     yield {
@@ -71,10 +76,10 @@ const definition: AgentDefinition = {
           "Now I'll analyze the changes and create a commit with a good commit message.",
       },
       includeToolCall: false,
-    }
+    };
 
-    yield 'STEP_ALL'
+    yield 'STEP_ALL';
   },
-}
+};
 
-export default definition
+export default definition;

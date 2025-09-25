@@ -1,5 +1,5 @@
-import type { AgentDefinition } from './types/agent-definition'
-import { publisher } from './constants'
+import type { AgentDefinition } from './types/agent-definition';
+import { publisher } from './constants';
 
 const definition: AgentDefinition = {
   id: 'deep-code-reviewer',
@@ -18,7 +18,10 @@ const definition: AgentDefinition = {
     'run_terminal_command',
     'spawn_agents',
   ],
-  spawnableAgents: ['file-explorer', 'deep-thinker'],
+  spawnableAgents: [
+    'file-explorer',
+    'deep-thinker',
+  ],
 
   instructionsPrompt: `Instructions:
 1. Use git diff to get the changes, but also get untracked files.
@@ -46,7 +49,7 @@ Use the following guidelines to review the changes and suggest improvements:
       input: {
         command: 'git diff HEAD --name-only',
       },
-    }
+    };
 
     // Step 2: Get untracked files from git status
     const { toolResult: gitStatusResult } = yield {
@@ -54,7 +57,7 @@ Use the following guidelines to review the changes and suggest improvements:
       input: {
         command: 'git status --porcelain',
       },
-    }
+    };
 
     // Step 3: Run full git diff to see the actual changes
     yield {
@@ -62,26 +65,29 @@ Use the following guidelines to review the changes and suggest improvements:
       input: {
         command: 'git diff HEAD',
       },
-    }
+    };
 
     // Step 4: Extract file paths from git diff and status output
-    const gitDiffOutput = JSON.stringify(gitDiffResult ?? [])
+    const gitDiffOutput = JSON.stringify(gitDiffResult ?? []);
     const changedFiles = gitDiffOutput
       .split('\n')
       .map((line) => line.trim())
-      .filter((line) => line && !line.startsWith('??') && !line.includes('OSC'))
+      .filter(
+        (line) => line && !line.startsWith('??') && !line.includes('OSC'),
+      );
 
-    const gitStatusOutput = JSON.stringify(gitStatusResult ?? [])
+    const gitStatusOutput = JSON.stringify(gitStatusResult ?? []);
     const untrackedFiles = gitStatusOutput
       .split('\n')
       .map((line) => line.trim())
       .filter((line) => line.startsWith('??'))
       .map((line) => line.substring(3).trim()) // Remove '?? ' prefix
-      .filter((file) => file)
+      .filter((file) => file);
 
-    const allFilesToRead = [...changedFiles, ...untrackedFiles].filter(
-      (file) => file,
-    )
+    const allFilesToRead = [
+      ...changedFiles,
+      ...untrackedFiles,
+    ].filter((file) => file);
 
     // Step 5: Read the files
     if (allFilesToRead.length > 0) {
@@ -90,11 +96,11 @@ Use the following guidelines to review the changes and suggest improvements:
         input: {
           paths: allFilesToRead,
         },
-      }
+      };
     }
 
-    yield 'STEP_ALL'
+    yield 'STEP_ALL';
   },
-}
+};
 
-export default definition
+export default definition;

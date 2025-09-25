@@ -1,5 +1,5 @@
-import { publisher } from '../constants'
-import type { SecretAgentDefinition } from '../types/secret-agent-definition'
+import { publisher } from '../constants';
+import type { SecretAgentDefinition } from '../types/secret-agent-definition';
 
 const paramsSchema = {
   type: 'object' as const,
@@ -12,7 +12,7 @@ const paramsSchema = {
     },
   },
   required: ['prompts'],
-}
+};
 
 const fileExplorer: SecretAgentDefinition = {
   id: 'researcher-file-explorer',
@@ -23,7 +23,10 @@ const fileExplorer: SecretAgentDefinition = {
   publisher,
   outputMode: 'structured_output',
   includeMessageHistory: false,
-  toolNames: ['spawn_agents', 'set_output'],
+  toolNames: [
+    'spawn_agents',
+    'set_output',
+  ],
   spawnableAgents: ['researcher-file-picker'],
   inputSchema: {
     prompt: {
@@ -38,7 +41,7 @@ const fileExplorer: SecretAgentDefinition = {
   stepPrompt: '',
 
   handleSteps: function* ({ prompt, params }) {
-    const prompts: string[] = params?.prompts ?? []
+    const prompts: string[] = params?.prompts ?? [];
     const filePickerPrompts = prompts.map(
         (focusPrompt) =>
           `Based on the overall goal "${prompt}", find files related to this specific area: ${focusPrompt}`,
@@ -51,14 +54,14 @@ const fileExplorer: SecretAgentDefinition = {
             prompt: promptText,
           })),
         },
-      }
+      };
     yield {
       toolName: 'set_output',
       input: {
         results: spawnResult,
       },
-    }
+    };
   },
-}
+};
 
-export default fileExplorer
+export default fileExplorer;

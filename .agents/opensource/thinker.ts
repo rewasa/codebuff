@@ -1,6 +1,6 @@
-import { publisher } from '../constants'
+import { publisher } from '../constants';
 
-import type { AgentDefinition } from '../types/agent-definition'
+import type { AgentDefinition } from '../types/agent-definition';
 
 const definition: AgentDefinition = {
   id: 'oss-model-thinker',
@@ -36,6 +36,6 @@ Try not to be too prescriptive or confident in one solution. Instead, give clear
 
 You must be extremely concise and to the point.`,
   stepPrompt: `Don't forget to end your response with the end_turn tool: <end_turn></end_turn>`,
-}
+};
 
-export default definition
+export default definition;

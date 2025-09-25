@@ -1,4 +1,4 @@
-import type { AgentDefinition } from '../types/agent-definition'
+import type { AgentDefinition } from '../types/agent-definition';
 
 /**
  * Extract Agent
@@ -15,7 +15,10 @@ const agent: AgentDefinition = {
   includeMessageHistory: false,
   publisher: 'brandon',
 
-  toolNames: ['web_search', 'end_turn'],
+  toolNames: [
+    'web_search',
+    'end_turn',
+  ],
 
   spawnableAgents: [],
 
@@ -89,6 +92,6 @@ Speak like a data extraction system:
 "[CACHE] Artifact saved: /data/etl/extract/abc123.json"`,
 
   stepPrompt: `Extract raw data from web sources using web_search tool.`,
-}
+};
 
-export default agent
+export default agent;

@@ -1,4 +1,4 @@
-import type { AgentDefinition } from '../types/agent-definition'
+import type { AgentDefinition } from '../types/agent-definition';
 
 /**
  * Transform Agent
@@ -226,7 +226,13 @@ All records in the data array must have stable IDs, confidence scores, and times
           },
           inputFormat: {
             type: 'string',
-            enum: ['json', 'csv', 'xml', 'text', 'mixed'],
+            enum: [
+              'json',
+              'csv',
+              'xml',
+              'text',
+              'mixed',
+            ],
             description: 'Detected input format',
           },
           outputFormat: {
@@ -285,7 +291,10 @@ All records in the data array must have stable IDs, confidence scores, and times
                 required: { type: 'boolean' },
                 description: { type: 'string' },
               },
-              required: ['type', 'required'],
+              required: [
+                'type',
+                'required',
+              ],
             },
           },
         },
@@ -332,12 +341,19 @@ All records in the data array must have stable IDs, confidence scores, and times
             error: { type: 'string', description: 'Error description' },
             severity: {
               type: 'string',
-              enum: ['warning', 'error'],
+              enum: [
+                'warning',
+                'error',
+              ],
               description: 'Error severity',
             },
             action: {
               type: 'string',
-              enum: ['skipped', 'defaulted', 'inferred'],
+              enum: [
+                'skipped',
+                'defaulted',
+                'inferred',
+              ],
               description: 'Action taken',
             },
           },
@@ -409,6 +425,6 @@ Speak like a flexible data cleaning system:
 "[NORMALIZE] Processing unstructured text into structured records"`,
 
   stepPrompt: `Transform raw extracted data into canonical structured format.`,
-}
+};
 
-export default agent
+export default agent;

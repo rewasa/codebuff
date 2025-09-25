@@ -1,6 +1,6 @@
-import { publisher } from '../constants'
+import { publisher } from '../constants';
 
-import type { AgentDefinition, ToolCall } from '../types/agent-definition'
+import type { AgentDefinition, ToolCall } from '../types/agent-definition';
 
 const definition: AgentDefinition = {
   id: 'oss-model-file-picker',
@@ -39,9 +39,9 @@ In your report, please give an analysis that includes the full paths of files th
     yield {
       toolName: 'find_files',
       input: { prompt: prompt ?? "Find files related to the user's request" },
-    } satisfies ToolCall
-    yield 'STEP_ALL'
+    } satisfies ToolCall;
+    yield 'STEP_ALL';
   },
-}
+};
 
-export default definition
+export default definition;

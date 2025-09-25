@@ -3,7 +3,10 @@
   "compilerOptions": {
     "baseUrl": ".",
     "skipLibCheck": true,
-    "types": ["bun", "node"],
+    "types": [
+      "bun",
+      "node"
+    ],
     "paths": {
       "@codebuff/common/*": ["../common/src/*"]
     }

@@ -1,6 +1,6 @@
-import { publisher } from '../constants'
+import { publisher } from '../constants';
 
-import type { AgentDefinition } from '../types/agent-definition'
+import type { AgentDefinition } from '../types/agent-definition';
 
 const definition: AgentDefinition = {
   id: 'oss-model-reviewer',
@@ -17,7 +17,10 @@ const definition: AgentDefinition = {
   },
   outputMode: 'last_message',
   includeMessageHistory: true,
-  toolNames: ['end_turn', 'run_file_change_hooks'],
+  toolNames: [
+    'end_turn',
+    'run_file_change_hooks',
+  ],
   spawnableAgents: [],
   systemPrompt: `# Persona: Nit Pick Nick the Reviewer
 
@@ -49,6 +52,6 @@ Provide specific feedback on the file changes made by the assistant, file-by-fil
 
 Be concise and to the point. After providing all your feedback, use the end_turn tool to end your response.`,
   stepPrompt: `IMPORTANT: Don't forget to end your response with the end_turn tool: <end_turn></end_turn>`,
-}
+};
 
-export default definition
+export default definition;

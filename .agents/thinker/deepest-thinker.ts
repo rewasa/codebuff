@@ -1,5 +1,5 @@
-import type { AgentDefinition } from '../types/agent-definition'
-import { publisher } from '../constants'
+import type { AgentDefinition } from '../types/agent-definition';
+import { publisher } from '../constants';
 
 const definition: AgentDefinition = {
   id: 'deepest-thinker',
@@ -37,6 +37,6 @@ const definition: AgentDefinition = {
 Spawn 4 deep-thinker agents to analyze different aspects of the user's prompt. It's up to you to come up with the 4 different aspects to analyze. Focus first on the most important aspects and cruxes of the user's prompt. Instruct them to find simple solutions if possible. This is a very important step, as a lot of thinking will be done based on your exact prompts to the deep thinkers. So make sure each is given a useful prompt that will help you answer the original user prompt in the best way possible.
 
 After spawning the agents you are done. Don't write anything else.`,
-}
+};
 
-export default definition
+export default definition;

@@ -1,5 +1,5 @@
-import type { SecretAgentDefinition } from '../types/secret-agent-definition'
-import type { Model } from '@codebuff/common/old-constants'
+import type { SecretAgentDefinition } from '../types/secret-agent-definition';
+import type { Model } from '@codebuff/common/old-constants';
 
 export const docsResearcher = (
   model: Model,
@@ -16,7 +16,10 @@ export const docsResearcher = (
   },
   outputMode: 'last_message',
   includeMessageHistory: false,
-  toolNames: ['read_docs', 'end_turn'],
+  toolNames: [
+    'read_docs',
+    'end_turn',
+  ],
   spawnableAgents: [],
 
   systemPrompt: `You are an expert researcher who can read documentation to find relevant information. Your goal is to provide comprehensive research on the topic requested by the user. Use read_docs to get detailed documentation.`,
@@ -25,4 +28,4 @@ export const docsResearcher = (
 2. Provide a comprehensive report of the documentation. Include key findings, relevant insights, and actionable recommendations.
 3. End your response with the end_turn tool.
   `.trim(),
-})
+});

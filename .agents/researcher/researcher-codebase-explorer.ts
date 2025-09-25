@@ -1,5 +1,5 @@
-import type { SecretAgentDefinition } from '../types/secret-agent-definition'
-import { publisher } from '../constants'
+import type { SecretAgentDefinition } from '../types/secret-agent-definition';
+import { publisher } from '../constants';
 
 const definition: SecretAgentDefinition = {
   id: 'researcher-codebase-explorer',
@@ -16,7 +16,11 @@ const definition: SecretAgentDefinition = {
   },
   outputMode: 'last_message',
   includeMessageHistory: false,
-  toolNames: ['code_search', 'run_terminal_command', 'read_files'],
+  toolNames: [
+    'code_search',
+    'run_terminal_command',
+    'read_files',
+  ],
   spawnableAgents: [],
 
   systemPrompt: `You are an expert software engineer who can explore the codebase to find relevant information using terminal commands. Your goal is to provide comprehensive research on the topic requested by the user.`,
@@ -27,6 +31,6 @@ const definition: SecretAgentDefinition = {
 4. Repeat the code_search, run_terminal_command, and read_files tool calls until you have gathered all the relevant information.
 5. Provide a comprehensive report of the relevant information for the user's prompt. Include key findings, relevant insights, and actionable recommendations.
   `.trim(),
-}
+};
 
-export default definition
+export default definition;

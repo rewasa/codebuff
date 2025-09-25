@@ -1,13 +1,21 @@
-import { publisher } from './constants'
-import { type SecretAgentDefinition } from './types/secret-agent-definition'
+import { publisher } from './constants';
+import {
+  PLACEHOLDER,
+  type SecretAgentDefinition,
+} from './types/secret-agent-definition';
 
 const readOnlyCommander: SecretAgentDefinition = {
   id: 'read-only-commander',
   publisher,
-  model: 'anthropic/claude-sonnet-4.5',
+  model: 'openai/gpt-5-chat',
+  reasoningOptions: {
+    enabled: true,
+    effort: 'low',
+    exclude: true,
+  },
   displayName: 'ReadOnly Commander',
   spawnerPrompt:
-    'Can run read-only terminal commands to answer questions with good analysis. Feel free to spawn mulitple in parallel.',
+    'Can run quick read-only terminal commands and report back on the results. Has a decent understanding of the codebase.',
   inputSchema: {
     prompt: {
       type: 'string',
@@ -17,11 +25,16 @@ const readOnlyCommander: SecretAgentDefinition = {
   },
   outputMode: 'last_message',
   includeMessageHistory: true,
-  inheritParentSystemPrompt: true,
-  toolNames: ['run_terminal_command', 'code_search', 'read_files'],
-  instructionsPrompt: `You are an expert software engineer, however you only execute READ ONLY commands to answer the user's question. You also cannot spawn any agents.
+  toolNames: [
+    'run_terminal_command',
+    'code_search',
+    'read_files',
+  ],
+  systemPrompt: `You are an expert software engineer, however you only execute READ ONLY commands to answer the user's question.
+  
+${PLACEHOLDER.FILE_TREE_PROMPT}
+${PLACEHOLDER.KNOWLEDGE_FILES_CONTENTS}`,
+  instructionsPrompt: `Use the tools to answer the user's question. But do not invoke any terminal commands that could have any permanent effects -- no editing files, no running scripts, no git commits, no installing packages, etc.`,
+};
 
-Use the tools to answer the user's question. But do not invoke any terminal commands that could have any permanent effects -- no editing files, no running scripts, no git commits, no installing packages, etc.`,
-}
-
-export default readOnlyCommander
+export default readOnlyCommander;

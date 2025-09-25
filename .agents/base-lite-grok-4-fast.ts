@@ -1,19 +1,24 @@
-import { publisher } from './constants'
+import { publisher } from './constants';
 import {
   PLACEHOLDER,
   SecretAgentDefinition,
-} from 'types/secret-agent-definition'
-import baseLite from './base-lite'
-import { buildArray } from '@codebuff/common/util/array'
-import { closeXml } from '@codebuff/common/util/xml'
+} from 'types/secret-agent-definition';
+import baseLite from './base-lite';
+import { buildArray } from '@codebuff/common/util/array';
+import { closeXml } from '@codebuff/common/util/xml';
 
 const definition: SecretAgentDefinition = {
   ...baseLite,
   id: 'base-lite-grok-4-fast',
   displayName: 'Base Lite Grok 4 Fast',
   publisher,
-  model: 'x-ai/grok-4-fast',
-  spawnableAgents: ['researcher-grok-4-fast', 'thinker', 'reviewer-lite', 'context-pruner'],
+  model: 'x-ai/grok-4-fast:free',
+  spawnableAgents: [
+    'researcher-grok-4-fast',
+    'thinker',
+    'reviewer-lite',
+    'context-pruner',
+  ],
   instructionsPrompt:
     PLACEHOLDER.KNOWLEDGE_FILES_CONTENTS +
     '\n\n<system_instructions>' +
@@ -58,6 +63,6 @@ const definition: SecretAgentDefinition = {
       `You must use the spawn_agents tool to spawn agents to help you complete the user request. You can spawn as many agents as you want. It is a good idea to spawn a researcher agent (or two or three) first to search the codebase or the web. Finally, you must spawn the reviewer agent to review your code changes.`,
     ).join('\n\n') +
     closeXml('system_instructions'),
-}
+};
 
-export default definition
+export default definition;

@@ -1,5 +1,5 @@
-import type { AgentDefinition } from '../types/agent-definition'
-import { publisher } from '../constants'
+import type { AgentDefinition } from '../types/agent-definition';
+import { publisher } from '../constants';
 
 const definition: AgentDefinition = {
   id: 'deep-thinker',
@@ -42,7 +42,7 @@ const definition: AgentDefinition = {
   handleSteps: function* ({ agentState, prompt, params }) {
     // Spawn all three thinking agents in parallel
 
-    const promptWithDefault = prompt ?? 'Think about this topic'
+    const promptWithDefault = prompt ?? 'Think about this topic';
 
     yield {
       toolName: 'spawn_agents',
@@ -62,11 +62,11 @@ const definition: AgentDefinition = {
           },
         ],
       },
-    }
+    };
 
     // Let the main agent process and synthesize all the responses
-    yield 'STEP'
+    yield 'STEP';
   },
-}
+};
 
-export default definition
+export default definition;
