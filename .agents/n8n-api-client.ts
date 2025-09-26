@@ -22,7 +22,7 @@ const definition: AgentDefinition = {
     prompt: {
       type: 'string',
       description:
-        'n8n API task – list workflows, get execution, deploy, etc. Describe what to do.',
+        'n8n API task – workflows, executions, credentials, nodes operations',
     },
     params: {
       type: 'object',
@@ -33,16 +33,22 @@ const definition: AgentDefinition = {
             'GET',
             'POST',
             'PUT',
+            'PATCH',
             'DELETE',
           ],
         },
         path: {
           type: 'string',
-          description: 'Relative API path, e.g. /api/v1/workflows',
+          description: 'API path, e.g. /api/v1/workflows',
         },
         body: {
           type: 'object',
-          description: 'JSON body for POST/PUT',
+          description: 'Request body for POST/PUT/PATCH',
+          additionalProperties: true,
+        },
+        query: {
+          type: 'object',
+          description: 'Query parameters',
           additionalProperties: true,
         },
         headers: {
@@ -50,13 +56,28 @@ const definition: AgentDefinition = {
           description: 'Additional headers',
           additionalProperties: true,
         },
+        format: {
+          type: 'string',
+          enum: [
+            'json',
+            'raw',
+            'pretty',
+          ],
+          description: 'Output format',
+        },
       },
       additionalProperties: true,
     },
   },
 
-  spawnerPrompt: `Utility agent for calling the Railway n8n REST API with proper authentication.
-Use this to: list workflows, fetch executions, trigger webhooks, and verify connectivity.`,
+  spawnerPrompt: `Advanced n8n REST API Client with comprehensive API operations.
+Use this to:
+- Manage workflows (CRUD operations)
+- Monitor executions and debug errors
+- Handle credentials and variables
+- Configure webhook endpoints
+- Access node information
+- Manage workflow settings`,
 
   systemPrompt: `You are the n8n API Client. Always use environment variables for auth:
 - Base URL: $N8N_API_URL_RAILWAY (e.g., https://n8n-production-bd8c.up.railway.app)
