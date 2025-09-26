@@ -313,14 +313,29 @@ Environment variables are defined and validated in `packages/internal/src/env.ts
 
 ### OpenRouter Lite Free Mode
 
-Set to prefer OpenRouter free models when using base-lite:
-- OPENROUTER_LITE_FREE_ENABLED=true
-- OPENROUTER_LITE_FREE_MODEL=x-ai/grok-4-fast:free (optional; default is this value)
+Set to prefer OpenRouter free models when using base-lite agents:
 
-Behavior:
-- Applies only to base-lite agents
-- If the current model already has ':free', no change
-- Fallback: when disabled or not base-lite, existing model routing remains unchanged
+**Environment Variables:**
+- `OPENROUTER_LITE_FREE_ENABLED=true` - Aktiviert den Free Mode für alle base-lite Agents
+- `OPENROUTER_LITE_FREE_MODEL=x-ai/grok-4-fast:free` - Setzt das gewünschte Free Model (optional; default ist dieser Wert)
+
+**Verfügbare Free Models auf OpenRouter:**
+- `x-ai/grok-4-fast:free` - Schnelles Grok Model (empfohlen)
+- `x-ai/grok-beta:free` - Beta Version von Grok
+- `meta-llama/llama-3.1-8b-instruct:free` - Llama 3.1 8B
+- `google/gemini-flash-1.5-8b-exp:free` - Gemini Flash experimentell
+- `mistralai/mistral-7b-instruct:free` - Mistral 7B
+
+**Behavior:**
+- Applies only to agents with 'base-lite' in their ID
+- If the current model already contains ':free', no change is made
+- When disabled or for non-base-lite agents, existing model routing remains unchanged
+- The override happens in `backend/src/prompt-agent-stream.ts`
+
+**Optimierte Agents für Free Mode:**
+- `base-lite` - Automatisch auf Free Model umgestellt wenn aktiviert
+- `base-lite-grok-4-fast` - Nutzt immer `x-ai/grok-4-fast:free`
+- `base-lite-codex` - Kann auch Free Mode nutzen wenn aktiviert
 
 ### Bun Wrapper Script
 

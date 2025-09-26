@@ -20,25 +20,63 @@ const definition: AgentDefinition = {
 
   spawnableAgents: [
     'n8n-workflow-manager',
+    'n8n-api-client',
+    'n8n-workflow-tester',
   ],
 
   inputSchema: {
     prompt: {
       type: 'string',
       description:
-        'n8n workflow debugging task - analyze failed executions, fix errors, optimize performance',
+        'n8n workflow debugging task - analyze executions, fix errors, optimize performance',
+    },
+    params: {
+      type: 'object',
+      properties: {
+        executionId: {
+          type: 'string',
+          description: 'Specific execution ID to debug',
+        },
+        workflowId: {
+          type: 'string',
+          description: 'Workflow ID to analyze',
+        },
+        errorType: {
+          type: 'string',
+          enum: [
+            'node_error',
+            'connection_error',
+            'auth_error',
+            'data_error',
+            'timeout',
+          ],
+          description: 'Type of error to focus on',
+        },
+        debugLevel: {
+          type: 'string',
+          enum: [
+            'basic',
+            'detailed',
+            'verbose',
+          ],
+          description: 'Level of debugging detail',
+        },
+      },
+      additionalProperties: true,
     },
   },
 
-  spawnerPrompt: `Specialized agent for debugging n8n workflows on Railway instance. Use this agent to:
-- Analyze failed workflow executions
-- Parse execution logs and error messages
-- Identify root causes of workflow failures
-- Suggest fixes for common n8n issues
-- Optimize workflow performance and reliability
-- Test workflow fixes and validate solutions
+  spawnerPrompt: `Advanced n8n Workflow Debugger with MCP-like capabilities. Use this agent to:
+- Analyze failed and successful executions in detail
+- Trace data flow through workflow nodes
+- Identify performance bottlenecks
+- Debug node configurations and connections
+- Analyze error patterns and suggest fixes
+- Test individual nodes with sample data
+- Optimize workflow performance
+- Generate detailed debug reports
 
-Expert in n8n error patterns, node configurations, and API troubleshooting.`,
+Provides comprehensive debugging with execution replay and data inspection.`,
 
   systemPrompt: `You are an expert n8n Workflow Debugger specializing in troubleshooting Railway n8n instance.
 
