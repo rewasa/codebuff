@@ -20,6 +20,7 @@ const definition: AgentDefinition = {
   spawnableAgents: [
     'n8n-api-client',
     'n8n-debugger',
+    'n8n-workflow-manager',
   ],
 
   inputSchema: {
@@ -31,30 +32,59 @@ const definition: AgentDefinition = {
     params: {
       type: 'object',
       properties: {
-        workflow_name: { type: 'string' },
-        test_type: {
+        workflowId: {
+          type: 'string',
+          description: 'Workflow ID or name to test',
+        },
+        testType: {
           type: 'string',
           enum: [
-            'webhook',
-            'full_workflow',
+            'unit',
             'integration',
+            'e2e',
             'performance',
+            'stress',
+            'validation',
           ],
+          description: 'Type of test to perform',
         },
-        test_data: { type: 'object' },
+        testData: {
+          type: 'object',
+          description: 'Test data to use',
+        },
+        testCases: {
+          type: 'array',
+          description: 'Array of test cases',
+          items: {
+            type: 'object',
+            properties: {
+              name: { type: 'string' },
+              input: { type: 'object' },
+              expectedOutput: { type: 'object' },
+              timeout: { type: 'number' },
+            },
+          },
+        },
+        iterations: {
+          type: 'number',
+          description: 'Number of test iterations for performance testing',
+        },
       },
+      additionalProperties: true,
     },
   },
 
-  spawnerPrompt: `Specialized agent for testing n8n workflows on Railway instance. Use for:
-- Automated workflow testing with sample data
-- Webhook endpoint validation
-- Integration testing with external APIs
-- Performance testing and load validation  
-- End-to-end workflow verification
-- Test result analysis and reporting
+  spawnerPrompt: `Comprehensive n8n Workflow Tester with MCP-like testing capabilities. Use for:
+- Unit testing individual nodes
+- Integration testing with external services
+- End-to-end workflow validation
+- Performance and stress testing
+- Webhook endpoint testing
+- Data validation and transformation testing
+- Regression testing
+- Load testing
 
-Prevents production issues by thorough testing before deployment.`,
+Provides detailed test reports with pass/fail criteria and performance metrics.`,
 
   systemPrompt: `You are an expert n8n Workflow Tester focused on comprehensive validation.
 
