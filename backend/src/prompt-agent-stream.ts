@@ -1,12 +1,11 @@
 import { providerModelNames } from '@codebuff/common/old-constants'
 
+import { promptAiSdkStream } from './llm-apis/vercel-ai-sdk/ai-sdk'
 import { globalStopSequence } from './tools/constants'
 import { env } from '@codebuff/internal/env'
+import { openRouterLanguageModel } from './llm-apis/openrouter'
 
 import type { AgentTemplate } from './templates/types'
-import type { PromptAiSdkStreamFn } from '@codebuff/common/types/contracts/llm'
-import type { Logger } from '@codebuff/common/types/contracts/logger'
-import type { ParamsOf } from '@codebuff/common/types/function-params'
 import type { Message } from '@codebuff/common/types/messages/codebuff-message'
 import type { OpenRouterProviderOptions } from '@codebuff/internal/openrouter-ai-sdk'
 
@@ -18,10 +17,9 @@ export const getAgentStreamFromTemplate = (params: {
   onCostCalculated?: (credits: number) => Promise<void>
   agentId?: string
   includeCacheControl?: boolean
+  enableTokenOptimization?: boolean
 
   template: AgentTemplate
-  logger: Logger
-  promptAiSdkStream: PromptAiSdkStreamFn
 }) => {
   const {
     clientSessionId,
@@ -32,8 +30,6 @@ export const getAgentStreamFromTemplate = (params: {
     agentId,
     includeCacheControl,
     template,
-    logger,
-    promptAiSdkStream,
   } = params
 
   if (!template) {
@@ -58,7 +54,7 @@ export const getAgentStreamFromTemplate = (params: {
   } catch {}
 
   const getStream = (messages: Message[]) => {
-    const aiSdkStreamParams: ParamsOf<PromptAiSdkStreamFn> = {
+    const options: Parameters<typeof promptAiSdkStream>[0] = {
       messages,
       model: effectiveModel,
       stopSequences: [globalStopSequence],
@@ -69,9 +65,7 @@ export const getAgentStreamFromTemplate = (params: {
       maxOutputTokens: 32_000,
       onCostCalculated,
       includeCacheControl,
-      agentId,
-      maxRetries: 3,
-      logger,
+      agentId
     }
 
     // Add Gemini-specific options if needed
@@ -79,17 +73,25 @@ export const getAgentStreamFromTemplate = (params: {
     const provider =
       providerModelNames[primaryModel as keyof typeof providerModelNames]
 
-    if (!aiSdkStreamParams.providerOptions) {
-      aiSdkStreamParams.providerOptions = {}
+    if (!options.providerOptions) {
+      options.providerOptions = {}
     }
-    if (!aiSdkStreamParams.providerOptions.openrouter) {
-      aiSdkStreamParams.providerOptions.openrouter = {}
+    if (provider === 'gemini') {
+      if (!options.providerOptions.gemini) {
+        options.providerOptions.gemini = {}
+      }
+      if (!options.providerOptions.gemini.thinkingConfig) {
+        options.providerOptions.gemini.thinkingConfig = { thinkingBudget: 128 }
+      }
+    }
+    if (!options.providerOptions.openrouter) {
+      options.providerOptions.openrouter = {}
     }
     ;(
-      aiSdkStreamParams.providerOptions.openrouter as OpenRouterProviderOptions
+      options.providerOptions.openrouter as OpenRouterProviderOptions
     ).reasoning = template.reasoningOptions
 
-    return promptAiSdkStream(aiSdkStreamParams)
+    return promptAiSdkStream(options)
   }
 
   return { getStream }
