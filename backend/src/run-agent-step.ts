@@ -229,6 +229,7 @@ export const runAgentStep = async (
     userId,
     agentId: agentState.agentId,
     template: agentTemplate,
+    enableTokenOptimization: true, // Enable token optimization
     onCostCalculated: async (credits: number) => {
       try {
         agentState.creditsUsed += credits
