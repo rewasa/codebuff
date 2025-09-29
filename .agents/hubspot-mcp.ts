@@ -7,7 +7,7 @@ const definition: SecretAgentDefinition & { mcpServers?: Record<string, any> } =
   {
     id: 'hubspot-mcp',
     publisher,
-    ...base('anthropic/claude-4.5-sonnet', 'normal'),
+    ...base('anthropic/claude-4-sonnet-20250522', 'normal'),
 
     displayName: 'Hubspot MCP Expert Agent',
     spawnerPrompt: '',

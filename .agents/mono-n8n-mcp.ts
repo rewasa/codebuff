@@ -7,7 +7,7 @@ const definition: SecretAgentDefinition & { mcpServers?: Record<string, any> } =
   {
     id: 'mono-n8n-mcp',
     publisher,
-    ...base('anthropic/claude-4.5-sonnet', 'normal'),
+    ...base('anthropic/claude-4-sonnet-20250522', 'normal'),
 
     // Custom overrides for the n8n MCP agent
     displayName: 'n8n Railway MCP Expert Agent',
