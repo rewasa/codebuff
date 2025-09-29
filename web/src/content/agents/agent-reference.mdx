@@ -45,7 +45,7 @@ This field is key if the agent is intended to be spawned by other agents.
 The model to use, which can be any model string from [Openrouter](https://openrouter.ai/models).
 
 ```json
-"model": "anthropic/claude-4-sonnet-20250522"
+"model": "anthropic/claude-4.5-sonnet"
 ```
 
 #### Reasoning Options (`reasoningOptions`, object, optional)
@@ -335,7 +335,7 @@ const definition: AgentDefinition = {
 
   displayName: "Documentation Writer",
   spawnerPrompt: "Spawn this agent for creating comprehensive documentation, API docs, or user guides",
-  model: "anthropic/claude-4-sonnet-20250522",
+  model: "anthropic/claude-4.5-sonnet",
   outputMode: "last_message",
   includeMessageHistory: true,
 

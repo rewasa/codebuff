@@ -10,7 +10,7 @@ import type { AgentDefinition } from '../types/agent-definition'
 const agent: AgentDefinition = {
   id: 'load-agent',
   displayName: 'Load Agent',
-  model: 'anthropic/claude-4-sonnet-20250522',
+  model: 'anthropic/claude-4.5-sonnet',
   outputMode: 'last_message',
   includeMessageHistory: false,
   publisher: 'brandon',

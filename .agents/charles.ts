@@ -13,7 +13,7 @@ const definition: AgentDefinition = {
   id: 'charles',
   publisher,
   displayName: 'Charles - Deep Sea Tuna Researcher',
-  model: 'anthropic/claude-4-sonnet-20250522',
+  model: 'anthropic/claude-4.5-sonnet',
 
   // Tools for research, documentation, and analysis
   toolNames: [
