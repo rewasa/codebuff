@@ -1,7 +1,7 @@
-import { publisher } from './constants';
-import { base } from './factory/base.ts';
+import { publisher } from './constants'
+import { base } from './factory/base.ts'
 
-import type { SecretAgentDefinition } from './types/secret-agent-definition';
+import type { SecretAgentDefinition } from './types/secret-agent-definition'
 
 const definition: SecretAgentDefinition & { mcpServers?: Record<string, any> } =
   {
@@ -13,17 +13,14 @@ const definition: SecretAgentDefinition & { mcpServers?: Record<string, any> } =
     spawnerPrompt: '',
     mcpServers: {
       hubspot: {
-        type: 'stdio',
         command: 'npx',
-        args: [
-          '-y',
-          '@hubspot/mcp-server',
-        ],
+        args: ['-y', '@hubspot/mcp-server'],
         env: {
           PRIVATE_APP_ACCESS_TOKEN: '${PRIVATE_APP_ACCESS_TOKEN}',
         },
+        working_directory: null,
       },
     },
-  };
+  }
 
-export default definition;
+export default definition
