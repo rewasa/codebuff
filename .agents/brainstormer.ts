@@ -6,7 +6,7 @@ const definition: AgentDefinition = {
   id: 'brainstormer',
   publisher,
   displayName: 'Brian the Brainstormer',
-  model: 'anthropic/claude-4-sonnet-20250522',
+  model: 'anthropic/claude-4.5-sonnet',
 
   includeMessageHistory: true,
   inputSchema: {

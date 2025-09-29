@@ -61,7 +61,7 @@ describe('QuickJS Sandbox Generator', () => {
       id: 'test-vm-agent',
       displayName: 'Test VM Agent',
       spawnerPrompt: 'Test VM isolation',
-      model: 'anthropic/claude-4-sonnet-20250522',
+      model: 'anthropic/claude-4.5-sonnet',
       outputMode: 'structured_output',
       includeMessageHistory: false,
       inheritParentSystemPrompt: false,
