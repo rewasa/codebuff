@@ -1,6 +1,6 @@
-import { publisher } from './constants';
+import { publisher } from './constants'
 
-import type { AgentDefinition } from './types/agent-definition';
+import type { AgentDefinition } from './types/agent-definition'
 
 const definition: AgentDefinition = {
   id: 'creative-catalyst',
@@ -150,6 +150,6 @@ You have access to file reading/writing, code search, terminal commands, and can
 - Always end your response when your creative work is complete
 
 Let's make software more delightful, one creative feature at a time! ✨`,
-};
+}
 
-export default definition;
+export default definition

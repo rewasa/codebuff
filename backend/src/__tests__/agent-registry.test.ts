@@ -1,4 +1,3 @@
-import { TEST_AGENT_RUNTIME_IMPL } from '@codebuff/common/testing/impl/agent-runtime'
 import {
   clearMockedModules,
   mockModule,
@@ -23,12 +22,8 @@ import {
 } from '../templates/agent-registry'
 
 import type { AgentTemplate } from '../templates/types'
-import type { AgentRuntimeDeps } from '@codebuff/common/types/contracts/agent-runtime'
-import type { Logger } from '@codebuff/common/types/contracts/logger'
 import type { DynamicAgentTemplate } from '@codebuff/common/types/dynamic-agent-template'
 import type { ProjectFileContext } from '@codebuff/common/util/file'
-
-let agentRuntimeImpl: AgentRuntimeDeps
 
 // Create mock static templates that will be used by the agent registry
 const mockStaticTemplates: Record<string, AgentTemplate> = {
@@ -43,8 +38,7 @@ const mockStaticTemplates: Record<string, AgentTemplate> = {
     spawnableAgents: [],
     outputMode: 'last_message',
     includeMessageHistory: true,
-    inheritParentSystemPrompt: false,
-    model: 'anthropic/claude-4-sonnet-20250522',
+    model: 'anthropic/claude-4.5-sonnet',
     spawnerPrompt: 'Test',
     inputSchema: {},
   },
@@ -59,7 +53,6 @@ const mockStaticTemplates: Record<string, AgentTemplate> = {
     spawnableAgents: [],
     outputMode: 'last_message',
     includeMessageHistory: true,
-    inheritParentSystemPrompt: false,
     model: 'google/gemini-2.5-flash',
     spawnerPrompt: 'Test',
     inputSchema: {},
@@ -105,6 +98,15 @@ describe('Agent Registry', () => {
       desc: (field: any) => ({ type: 'desc', field }),
       eq: (field: any, value: any) => ({ type: 'eq', field, value }),
     }))
+
+    // Mock logger
+    mockModule('../util/logger', () => ({
+      logger: {
+        debug: () => {},
+        error: () => {},
+        warn: () => {},
+      },
+    }))
   })
   let mockFileContext: ProjectFileContext
 
@@ -144,11 +146,18 @@ describe('Agent Registry', () => {
       desc: (field: any) => ({ type: 'desc', field }),
       eq: (field: any, value: any) => ({ type: 'eq', field, value }),
     }))
+
+    // Mock logger
+    mockModule('../util/logger', () => ({
+      logger: {
+        debug: () => {},
+        error: () => {},
+        warn: () => {},
+      },
+    }))
   })
 
   beforeEach(async () => {
-    agentRuntimeImpl = { ...TEST_AGENT_RUNTIME_IMPL }
-
     // Clear cache before each test
     clearDatabaseCache()
     mockFileContext = getStubProjectFileContext()
@@ -158,13 +167,7 @@ describe('Agent Registry', () => {
       '@codebuff/common/templates/agent-validation'
     )
     spyOn(validationModule, 'validateAgents').mockImplementation(
-      ({
-        agentTemplates = {},
-        logger,
-      }: {
-        agentTemplates?: Record<string, DynamicAgentTemplate>
-        logger: Logger
-      }) => {
+      (agentTemplates: Record<string, DynamicAgentTemplate> = {}) => {
         // Start with static templates (simulating the real behavior)
         const templates: Record<string, AgentTemplate> = {
           ...mockStaticTemplates,
@@ -189,7 +192,7 @@ describe('Agent Registry', () => {
     )
 
     spyOn(validationModule, 'validateSingleAgent').mockImplementation(
-      ({ template }: { template: DynamicAgentTemplate; filePath?: string }) => {
+      (template: DynamicAgentTemplate, options?: any) => {
         // Check for malformed agents (missing required fields)
         if (
           template.id === 'malformed-agent' ||
@@ -232,88 +235,79 @@ describe('Agent Registry', () => {
           spawnableAgents: [],
           outputMode: 'last_message',
           includeMessageHistory: true,
-          inheritParentSystemPrompt: false,
-          model: 'anthropic/claude-4-sonnet-20250522',
+          model: 'anthropic/claude-4.5-sonnet',
           spawnerPrompt: 'Test',
           inputSchema: {},
         } as AgentTemplate,
       }
 
-      const result = await getAgentTemplate({
-        ...agentRuntimeImpl,
-        agentId: 'my-agent',
-        localAgentTemplates: localAgents,
-      })
+      const result = await getAgentTemplate('my-agent', localAgents)
       expect(result).toBeTruthy()
       expect(result?.id).toBe('my-agent')
     })
 
     it('should handle agent IDs with publisher but no version', async () => {
-      const result = await getAgentTemplate({
-        ...agentRuntimeImpl,
-        agentId: 'publisher/agent-name',
-        localAgentTemplates: {},
-      })
+      const result = await getAgentTemplate('publisher/agent-name', {})
       expect(result).toBeNull()
     })
 
     it('should handle agent IDs with publisher and version', async () => {
-      const result = await getAgentTemplate({
-        ...agentRuntimeImpl,
-        agentId: 'publisher/agent-name@1.0.0',
-        localAgentTemplates: {},
-      })
+      const result = await getAgentTemplate('publisher/agent-name@1.0.0', {})
       expect(result).toBeNull()
     })
 
     it('should return null for invalid agent ID formats', async () => {
-      const result = await getAgentTemplate({
-        ...agentRuntimeImpl,
-        agentId: 'invalid/format/with/too/many/slashes',
-        localAgentTemplates: {},
-      })
+      const result = await getAgentTemplate(
+        'invalid/format/with/too/many/slashes',
+        {},
+      )
       expect(result).toBeNull()
     })
   })
 
   describe('fetchAgentFromDatabase', () => {
     it('should return null when agent not found in database', async () => {
-      const result = await getAgentTemplate({
-        ...agentRuntimeImpl,
-        agentId: 'nonexistent/agent@1.0.0',
-        localAgentTemplates: {},
-      })
+      const result = await getAgentTemplate('nonexistent/agent@1.0.0', {})
       expect(result).toBeNull()
     })
 
     it('should handle database query for specific version', async () => {
-      const mockAgentData: AgentTemplate = {
-        id: 'test-publisher/test-agent@1.0.0',
-        displayName: 'Test Agent',
-        systemPrompt: 'Test system prompt',
-        instructionsPrompt: 'Test instructions',
-        stepPrompt: 'Test step prompt',
-        toolNames: ['end_turn'],
-        mcpServers: {},
-        inputSchema: {},
-        spawnableAgents: [],
-        outputMode: 'last_message',
-        includeMessageHistory: true,
-        inheritParentSystemPrompt: false,
-        model: 'anthropic/claude-4-sonnet-20250522',
-        spawnerPrompt: 'Test',
+      const mockAgentData = {
+        id: 'test-agent',
+        publisher_id: 'test-publisher',
+        version: '1.0.0',
+        major: 1,
+        minor: 0,
+        patch: 0,
+        data: {
+          id: 'test-agent',
+          displayName: 'Test Agent',
+          systemPrompt: 'Test system prompt',
+          instructionsPrompt: 'Test instructions',
+          stepPrompt: 'Test step prompt',
+          toolNames: ['end_turn'],
+          spawnableAgents: [],
+          outputMode: 'last_message',
+          includeMessageHistory: true,
+          model: 'anthropic/claude-4.5-sonnet',
+          spawnerPrompt: 'Test',
+        },
       }
 
-      agentRuntimeImpl = {
-        ...agentRuntimeImpl,
-        fetchAgentFromDatabase: async () => mockAgentData,
-      }
+      const dbModule = await import('@codebuff/common/db')
+      spyOn(dbModule.default, 'select').mockImplementation(
+        () =>
+          ({
+            from: () => ({
+              where: () => Promise.resolve([mockAgentData]),
+            }),
+          }) as any,
+      )
 
-      const result = await getAgentTemplate({
-        ...agentRuntimeImpl,
-        agentId: 'test-publisher/test-agent@1.0.0',
-        localAgentTemplates: {},
-      })
+      const result = await getAgentTemplate(
+        'test-publisher/test-agent@1.0.0',
+        {},
+      )
       expect(result).toBeTruthy()
       expect(result?.id).toBe('test-publisher/test-agent@1.0.0')
     })
@@ -333,70 +327,66 @@ describe('Agent Registry', () => {
           spawnableAgents: [],
           outputMode: 'last_message',
           includeMessageHistory: true,
-          inheritParentSystemPrompt: false,
-          model: 'anthropic/claude-4-sonnet-20250522',
+          model: 'anthropic/claude-4.5-sonnet',
           spawnerPrompt: 'Local test',
           inputSchema: {},
         } as AgentTemplate,
       }
 
-      const result = await getAgentTemplate({
-        ...agentRuntimeImpl,
-        agentId: 'test-agent',
-        localAgentTemplates: localAgents,
-      })
+      const result = await getAgentTemplate('test-agent', localAgents)
       expect(result).toBeTruthy()
       expect(result?.displayName).toBe('Local Test Agent')
     })
 
     it('should use database cache when available', async () => {
-      const mockAgentData: AgentTemplate = {
-        id: 'test-publisher/cached-agent@1.0.0',
-        displayName: 'Cached Agent',
-        systemPrompt: 'Cached system prompt',
-        instructionsPrompt: 'Cached instructions',
-        stepPrompt: 'Cached step prompt',
-        inputSchema: {},
-        mcpServers: {},
-        toolNames: ['end_turn'],
-        spawnableAgents: [],
-        outputMode: 'last_message',
-        includeMessageHistory: true,
-        inheritParentSystemPrompt: false,
-        model: 'anthropic/claude-4-sonnet-20250522',
-        spawnerPrompt: 'Cached test',
+      const mockAgentData = {
+        id: 'cached-agent',
+        publisher_id: 'test-publisher',
+        version: '1.0.0',
+        major: 1,
+        minor: 0,
+        patch: 0,
+        data: {
+          id: 'cached-agent',
+          displayName: 'Cached Agent',
+          systemPrompt: 'Cached system prompt',
+          instructionsPrompt: 'Cached instructions',
+          stepPrompt: 'Cached step prompt',
+          toolNames: ['end_turn'],
+          spawnableAgents: [],
+          outputMode: 'last_message',
+          includeMessageHistory: true,
+          model: 'anthropic/claude-4.5-sonnet',
+          spawnerPrompt: 'Cached test',
+        },
       }
 
-      const spy = mock(async () => mockAgentData)
-      agentRuntimeImpl = {
-        ...agentRuntimeImpl,
-        fetchAgentFromDatabase: spy,
-      }
+      const dbModule = await import('@codebuff/common/db')
+      const selectSpy = spyOn(dbModule.default, 'select').mockImplementation(
+        () =>
+          ({
+            from: () => ({
+              where: () => Promise.resolve([mockAgentData]),
+            }),
+          }) as any,
+      )
 
       // First call - should hit database
-      const result1 = await getAgentTemplate({
-        ...agentRuntimeImpl,
-        agentId: 'test-publisher/cached-agent@1.0.0',
-        localAgentTemplates: {},
-      })
+      const result1 = await getAgentTemplate(
+        'test-publisher/cached-agent@1.0.0',
+        {},
+      )
       expect(result1).toBeTruthy()
-      expect(spy).toHaveBeenCalled()
-
-      const spy2 = mock(async () => mockAgentData)
-      agentRuntimeImpl = {
-        ...agentRuntimeImpl,
-        fetchAgentFromDatabase: spy2,
-      }
+      expect(selectSpy).toHaveBeenCalledTimes(1)
 
       // Second call - should use cache
-      const result2 = await getAgentTemplate({
-        ...agentRuntimeImpl,
-        agentId: 'test-publisher/cached-agent@1.0.0',
-        localAgentTemplates: {},
-      })
+      const result2 = await getAgentTemplate(
+        'test-publisher/cached-agent@1.0.0',
+        {},
+      )
       expect(result2).toBeTruthy()
       expect(result2?.displayName).toBe('Cached Agent')
-      expect(spy2).not.toHaveBeenCalled()
+      expect(selectSpy).toHaveBeenCalledTimes(1)
     })
   })
 
@@ -415,16 +405,13 @@ describe('Agent Registry', () => {
             spawnableAgents: [],
             outputMode: 'last_message',
             includeMessageHistory: true,
-            model: 'anthropic/claude-4-sonnet-20250522',
+            model: 'anthropic/claude-4.5-sonnet',
             spawnerPrompt: 'Custom test',
           },
         },
       }
 
-      const result = assembleLocalAgentTemplates({
-        ...agentRuntimeImpl,
-        fileContext,
-      })
+      const result = assembleLocalAgentTemplates(fileContext)
 
       // Should have dynamic template
       expect(result.agentTemplates).toHaveProperty('custom-agent')
@@ -448,10 +435,7 @@ describe('Agent Registry', () => {
         },
       }
 
-      const result = assembleLocalAgentTemplates({
-        ...agentRuntimeImpl,
-        fileContext,
-      })
+      const result = assembleLocalAgentTemplates(fileContext)
 
       // Should not have invalid template
       expect(result.agentTemplates).not.toHaveProperty('invalid-agent')
@@ -466,10 +450,7 @@ describe('Agent Registry', () => {
         agentTemplates: {},
       }
 
-      const result = assembleLocalAgentTemplates({
-        ...agentRuntimeImpl,
-        fileContext,
-      })
+      const result = assembleLocalAgentTemplates(fileContext)
 
       // Should have no validation errors
       expect(result.validationErrors).toHaveLength(0)
@@ -481,83 +462,111 @@ describe('Agent Registry', () => {
 
   describe('clearDatabaseCache', () => {
     it('should clear the database cache', async () => {
-      const mockAgentData: AgentTemplate = {
-        id: 'test-publisher/cache-test-agent@1.0.0',
-        displayName: 'Cache Test Agent',
-        systemPrompt: 'Cache test system prompt',
-        instructionsPrompt: 'Cache test instructions',
-        stepPrompt: 'Cache test step prompt',
-        inputSchema: {},
-        mcpServers: {},
-        toolNames: ['end_turn'],
-        spawnableAgents: [],
-        outputMode: 'last_message',
-        includeMessageHistory: true,
-        inheritParentSystemPrompt: false,
-        model: 'anthropic/claude-4-sonnet-20250522',
-        spawnerPrompt: 'Cache test',
+      const mockAgentData = {
+        id: 'cache-test-agent',
+        publisher_id: 'test-publisher',
+        version: '1.0.0',
+        major: 1,
+        minor: 0,
+        patch: 0,
+        data: {
+          id: 'cache-test-agent',
+          displayName: 'Cache Test Agent',
+          systemPrompt: 'Cache test system prompt',
+          instructionsPrompt: 'Cache test instructions',
+          stepPrompt: 'Cache test step prompt',
+          toolNames: ['end_turn'],
+          spawnableAgents: [],
+          outputMode: 'last_message',
+          includeMessageHistory: true,
+          model: 'anthropic/claude-4.5-sonnet',
+          spawnerPrompt: 'Cache test',
+        },
       }
 
-      const selectSpy = mock(async () => mockAgentData)
-      agentRuntimeImpl = {
-        ...agentRuntimeImpl,
-        fetchAgentFromDatabase: selectSpy,
-      }
+      const dbModule = await import('@codebuff/common/db')
+      const selectSpy = spyOn(dbModule.default, 'select').mockImplementation(
+        () =>
+          ({
+            from: () => ({
+              where: () => Promise.resolve([mockAgentData]),
+            }),
+          }) as any,
+      )
 
       // First call - should hit database and populate cache
-      await getAgentTemplate({
-        ...agentRuntimeImpl,
-        agentId: 'test-publisher/cache-test-agent@1.0.0',
-        localAgentTemplates: {},
-      })
+      await getAgentTemplate('test-publisher/cache-test-agent@1.0.0', {})
       expect(selectSpy).toHaveBeenCalledTimes(1)
 
       // Second call - should use cache
-      await getAgentTemplate({
-        ...agentRuntimeImpl,
-        agentId: 'test-publisher/cache-test-agent@1.0.0',
-        localAgentTemplates: {},
-      })
+      await getAgentTemplate('test-publisher/cache-test-agent@1.0.0', {})
       expect(selectSpy).toHaveBeenCalledTimes(1)
 
       // Clear cache
       clearDatabaseCache()
 
       // Third call - should hit database again after cache clear
-      await getAgentTemplate({
-        ...agentRuntimeImpl,
-        agentId: 'test-publisher/cache-test-agent@1.0.0',
-        localAgentTemplates: {},
-      })
+      await getAgentTemplate('test-publisher/cache-test-agent@1.0.0', {})
       expect(selectSpy).toHaveBeenCalledTimes(2)
     })
   })
 
   describe('edge cases', () => {
     it('should handle empty agent ID', async () => {
-      const result = await getAgentTemplate({
-        ...agentRuntimeImpl,
-        agentId: '',
-        localAgentTemplates: {},
-      })
+      const result = await getAgentTemplate('', {})
       expect(result).toBeNull()
     })
 
     it('should handle agent ID with multiple @ symbols', async () => {
-      const result = await getAgentTemplate({
-        ...agentRuntimeImpl,
-        agentId: 'publisher/agent@1.0.0@extra',
-        localAgentTemplates: {},
-      })
+      const result = await getAgentTemplate('publisher/agent@1.0.0@extra', {})
       expect(result).toBeNull()
     })
 
     it('should handle agent ID with only @ symbol', async () => {
-      const result = await getAgentTemplate({
-        ...agentRuntimeImpl,
-        agentId: 'publisher/agent@',
-        localAgentTemplates: {},
+      const result = await getAgentTemplate('publisher/agent@', {})
+      expect(result).toBeNull()
+    })
+
+    it('should handle database errors gracefully', async () => {
+      const dbModule = await import('@codebuff/common/db')
+      spyOn(dbModule.default, 'select').mockImplementation(() => {
+        throw new Error('Database connection failed')
       })
+
+      const result = await getAgentTemplate('publisher/agent@1.0.0', {})
+      expect(result).toBeNull()
+    })
+
+    it('should handle malformed database response', async () => {
+      const dbModule = await import('@codebuff/common/db')
+      spyOn(dbModule.default, 'select').mockImplementation(
+        () =>
+          ({
+            from: () => ({
+              where: () =>
+                Promise.resolve([
+                  {
+                    id: 'malformed-agent',
+                    publisher_id: 'publisher',
+                    version: '1.0.0',
+                    major: 1,
+                    minor: 0,
+                    patch: 0,
+                    data: {
+                      id: 'malformed-agent',
+                      displayName: 'Malformed Agent',
+                      // Missing required fields like systemPrompt, instructionsPrompt, stepPrompt
+                    },
+                  },
+                ]),
+            }),
+          }) as any,
+      )
+
+      const result = await getAgentTemplate(
+        'publisher/malformed-agent@1.0.0',
+        {},
+      )
       expect(result).toBeNull()
     })
   })

@@ -1,7 +1,7 @@
-import { publisher } from './constants';
-import { base } from './factory/base.ts';
+import { publisher } from './constants'
+import { base } from './factory/base.ts'
 
-import type { SecretAgentDefinition } from './types/secret-agent-definition';
+import type { SecretAgentDefinition } from './types/secret-agent-definition'
 
 const definition: SecretAgentDefinition & { mcpServers?: Record<string, any> } =
   {
@@ -14,15 +14,12 @@ const definition: SecretAgentDefinition & { mcpServers?: Record<string, any> } =
     mcpServers: {
       hubspot: {
         command: 'npx',
-        args: [
-          '-y',
-          'mcp/perplexity-ask',
-        ],
+        args: ['-y', 'mcp/perplexity-ask'],
         env: {
           PERPLEXITY_API_KEYN: '${PERPLEXITY_API_KEY}',
         },
       },
     },
-  };
+  }
 
-export default definition;
+export default definition
