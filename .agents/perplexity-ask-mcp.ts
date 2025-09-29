@@ -7,7 +7,7 @@ const definition: SecretAgentDefinition & { mcpServers?: Record<string, any> } =
   {
     id: 'perplexity-ask-mcp',
     publisher,
-    ...base('anthropic/claude-4.5-sonnet', 'normal'),
+    ...base('anthropic/claude-4-sonnet-20250522', 'normal'),
 
     displayName: 'Perplexity Ask MCP Expert Agent',
     spawnerPrompt: '',
