@@ -1,13 +1,13 @@
-import { publisher } from './constants'
-import { base } from './factory/base.ts'
+import { publisher } from './constants';
+import { base } from './factory/base.ts';
 
-import type { SecretAgentDefinition } from './types/secret-agent-definition'
+import type { SecretAgentDefinition } from './types/secret-agent-definition';
 
 const definition: SecretAgentDefinition & { mcpServers?: Record<string, any> } =
   {
     id: 'mono-n8n-mcp',
     publisher,
-    ...base('anthropic/claude-4-sonnet-20250522', 'normal'),
+    ...base('anthropic/claude-4.5-sonnet', 'normal'),
 
     // Custom overrides for the n8n MCP agent
     displayName: 'n8n Railway MCP Expert Agent',
@@ -156,6 +156,6 @@ const definition: SecretAgentDefinition & { mcpServers?: Record<string, any> } =
         ],
       },
     },
-  }
+  };
 
-export default definition
+export default definition;
