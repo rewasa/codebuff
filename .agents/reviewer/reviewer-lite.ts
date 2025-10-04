@@ -1,12 +1,12 @@
-import { publisher } from '../constants'
-import { createReviewer } from './reviewer'
+import { publisher } from '../constants';
+import { reviewer } from './reviewer-factory';
 
-import type { SecretAgentDefinition } from '../types/secret-agent-definition'
+import type { SecretAgentDefinition } from '../types/secret-agent-definition';
 
 const definition: SecretAgentDefinition = {
   id: 'reviewer-lite',
   publisher,
-  ...createReviewer('x-ai/grok-4-fast'),
-}
+  ...reviewer('x-ai/grok-4-fast:free'),
+};
 
-export default definition
+export default definition;

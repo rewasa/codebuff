@@ -1,4 +1,4 @@
-import type { AgentDefinition } from './types/agent-definition'
+import type { AgentDefinition } from './types/agent-definition';
 
 const definition: AgentDefinition = {
   id: 'notion-query-agent',
@@ -22,7 +22,10 @@ const definition: AgentDefinition = {
   mcpServers: {
     notionApi: {
       command: 'npx',
-      args: ['-y', '@notionhq/notion-mcp-server'],
+      args: [
+        '-y',
+        '@notionhq/notion-mcp-server',
+      ],
       env: {
         NOTION_TOKEN: 'ntn_***',
       },
@@ -40,6 +43,6 @@ const definition: AgentDefinition = {
 
 Include the ids of important blocks/pages/databases in the response.
 `,
-}
+};
 
-export default definition
+export default definition;

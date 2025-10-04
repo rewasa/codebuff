@@ -1,8 +1,8 @@
-import { publisher } from '../constants'
+import { publisher } from '../constants';
 import {
   PLACEHOLDER,
   type SecretAgentDefinition,
-} from '../types/secret-agent-definition'
+} from '../types/secret-agent-definition';
 
 const definition: SecretAgentDefinition = {
   id: 'plan-selector',
@@ -11,7 +11,10 @@ const definition: SecretAgentDefinition = {
   displayName: 'Plan Selector',
   spawnerPrompt:
     'Expert at evaluating and selecting the best plan from multiple options based on quality, feasibility, and simplicity.',
-  toolNames: ['read_files', 'set_output'],
+  toolNames: [
+    'read_files',
+    'set_output',
+  ],
   spawnableAgents: [],
   inputSchema: {
     prompt: {
@@ -29,7 +32,10 @@ const definition: SecretAgentDefinition = {
               id: { type: 'string' },
               plan: { type: 'string' },
             },
-            required: ['id', 'plan'],
+            required: [
+              'id',
+              'plan',
+            ],
           },
         },
       },
@@ -49,7 +55,10 @@ const definition: SecretAgentDefinition = {
         description: 'The ID of the chosen plan.',
       },
     },
-    required: ['reasoning', 'selectedPlanId'],
+    required: [
+      'reasoning',
+      'selectedPlanId',
+    ],
   },
   includeMessageHistory: true,
   systemPrompt: `You are an expert plan evaluator with deep experience in software engineering, architecture, and project management.
@@ -80,6 +89,6 @@ For each implementation, evaluate:
 - Alignment with the original task
 
 Use the set_output tool to return your selection.`,
-}
+};
 
-export default definition
+export default definition;

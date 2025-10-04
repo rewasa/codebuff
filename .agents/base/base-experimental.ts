@@ -1,12 +1,14 @@
-import { publisher } from '../constants'
-import { base } from './base-factory'
+import { reviewer } from './reviewer-factory';
 
-import type { SecretAgentDefinition } from '../types/secret-agent-definition'
+import type { SecretAgentDefinition } from '../types/secret-agent-definition';
 
 const definition: SecretAgentDefinition = {
-  id: 'base-experimental',
-  publisher,
-  ...base('grok-4', 'experimental'),
-}
+  ...reviewer('openai/gpt-5'),
+  id: 'reviewer-max',
+  reasoningOptions: {
+    enabled: true,
+    effort: 'medium',
+  },
+};
 
-export default definition
+export default definition;

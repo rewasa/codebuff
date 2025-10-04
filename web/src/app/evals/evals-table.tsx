@@ -126,7 +126,7 @@ export function EvalsTable({ results, isAdmin }: EvalsTableProps) {
   const modelDisplayNames: Record<string, string> = {
     'gemini-2.5-pro-preview-06-05': 'Gemini 2.5 Pro',
     'claude-opus-4-20250514': 'Claude 4 Opus',
-    'claude-sonnet-4-20250514': 'Claude 4 Sonnet',
+    'anthropic/claude-sonnet-4.5': 'Claude Sonnet 4.5',
     'o3-2025-04-16': 'o3',
     'o3-pro-2025-06-10': 'o3 Pro',
     'gemini-2.5-flash-preview-05-20': 'Gemini 2.5 Flash',

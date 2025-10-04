@@ -1,14 +1,15 @@
 import { SecretAgentDefinition } from '../../types/secret-agent-definition';
 import { publisher } from '../../constants';
-import researcherDocs from '../researcher-docs';
+import researcherCodebaseExplorer from '../researcher-codebase-explorer';
 
 const definition: SecretAgentDefinition = {
-  ...researcherDocs,
-  id: 'researcher-docs-gpt-5',
+  ...researcherCodebaseExplorer,
+  id: 'researcher-codebase-explorer-gpt-5',
   publisher,
-  displayName: 'Docs Researcher GPT-5',
+  displayName: 'Codebase Explorer GPT-5',
   model: 'openai/gpt-5',
   reasoningOptions: {
+    enabled: true,
     effort: 'medium',
   },
 };
