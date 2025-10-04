@@ -1,5 +1,5 @@
 import { publisher } from './constants';
-import { reviewer } from './factory/reviewer';
+import { reviewer } from './reviewer/reviewer-factory';
 
 import type { SecretAgentDefinition } from './types/secret-agent-definition';
 

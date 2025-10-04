@@ -295,7 +295,7 @@ export type ModelName =
   | 'openai/gpt-5-nano'
 
   // Anthropic
-  | 'anthropic/claude-4-sonnet-20250522'
+  | 'anthropic/claude-4.5-sonnet'
   | 'anthropic/claude-opus-4.1'
 
   // Gemini

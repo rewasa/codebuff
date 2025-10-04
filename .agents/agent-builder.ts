@@ -16,7 +16,7 @@ const toolsDefinitionContent = readFileSync(
 
 const definition: AgentDefinition = {
   id: 'agent-builder',
-  model: 'anthropic/claude-4-sonnet-20250522',
+  model: 'anthropic/claude-4.5-sonnet',
   displayName: 'Bob the Agent Builder',
   publisher,
   spawnerPrompt:
