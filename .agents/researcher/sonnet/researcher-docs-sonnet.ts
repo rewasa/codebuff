@@ -4,9 +4,9 @@ import researcherDocs from '../researcher-docs';
 
 const definition: SecretAgentDefinition = {
   ...researcherDocs,
-  id: 'researcher-docs-gpt-5',
+  id: 'researcher-docs-sonnet',
   publisher,
-  displayName: 'Docs Researcher GPT-5',
+  displayName: 'Docs Researcher Sonnet',
   model: 'openai/gpt-5',
   reasoningOptions: {
     effort: 'medium',
