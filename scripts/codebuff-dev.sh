@@ -66,14 +66,14 @@ wait_for_service() {
 # Function to display service status
 show_status() {
     echo -e "\n${BOLD}Codebuff Services Status:${NC}"
-    
+
     # Check backend
     if is_process_running "backend.*dev" && check_port 4242; then
         echo -e "Backend (4242): ${GREEN}Running${NC}"
     else
         echo -e "Backend (4242): ${RED}Not running${NC}"
     fi
-    
+
     # Check web
     if is_process_running "web.*dev" && check_port 3000; then
         echo -e "Web (3000):     ${GREEN}Running${NC}"
@@ -94,7 +94,7 @@ setup_agents_symlink() {
     local target_dir="${1:-$START_DIR}"
     local AGENTS_SRC="$ROOT_DIR/.agents"
     local AGENTS_DST="$target_dir/.agents"
-    
+
     if [ -d "$AGENTS_SRC" ]; then
         # Recreate broken symlink
         if [ -L "$AGENTS_DST" ] && [ ! -e "$AGENTS_DST" ]; then
@@ -112,15 +112,15 @@ stop_services() {
     echo -e "${YELLOW}Stopping Codebuff services...${NC}"
     pkill -f "backend.*dev" 2>/dev/null || true
     pkill -f "web.*dev" 2>/dev/null || true
-    
+
     # Stop database if it exists
     if [ -f "$ROOT_DIR/common/src/db/docker-compose.yml" ]; then
         (cd "$ROOT_DIR/common/src/db" && docker compose down) 2>/dev/null || true
     fi
-    
+
     # Remove log files
     rm -f backend.log web.log 2>/dev/null || true
-    
+
     echo -e "${GREEN}All services stopped${NC}"
 }
 
@@ -188,11 +188,12 @@ ensure_services() {
         # Start database if not running
     if ! docker ps --format '{{.Names}}' | grep -q "^manicode-db-1$"; then
         echo -e "${YELLOW}Starting database...${NC}"
-        (cd "$ROOT_DIR" && DISABLE_GOOGLE_CLOUD=true infisical run -- bun run start-db >> "$ROOT_DIR/db.log" 2>&1)
-        
+        (cd "$ROOT_DIR/common" && docker compose -f ./src/db/docker-compose.yml up --wait >> "$ROOT_DIR/db.log" 2>&1 && bun run db:generate >> "$ROOT_DIR/db.log" 2>&1 && sleep 1 && bun run db:migrate >> "$ROOT_DIR/db.log" 2>&1) &
+
         # Wait for database to be ready
-        sleep 5
-        
+        echo "Waiting for database container to start..."
+        sleep 12
+
         # Create user and add credits for rewalu@gmail.com
         echo -e "${YELLOW}Setting up user and credits...${NC}"
         docker exec -i manicode-db-1 psql -U manicode_user_local -d manicode_db_local << EOF
@@ -211,29 +212,29 @@ ensure_services() {
         )
         -- Add credits using the user id
         INSERT INTO credit_ledger (operation_id, user_id, principal, balance, type, priority, created_at)
-        SELECT 
-            md5(random()::text), 
-            COALESCE((SELECT id FROM get_user), (SELECT id FROM new_user)), 
-            999999999, 
-            999999999, 
-            'admin'::grant_type, 
-            1, 
+        SELECT
+            md5(random()::text),
+            COALESCE((SELECT id FROM get_user), (SELECT id FROM new_user)),
+            999999999,
+            999999999,
+            'admin'::grant_type,
+            1,
             now()
         WHERE NOT EXISTS (
-            SELECT 1 FROM credit_ledger 
-            WHERE user_id = '549ea6bf-df5d-4bc6-ae0c-9e3e8ca7b8bc' 
+            SELECT 1 FROM credit_ledger
+            WHERE user_id = '549ea6bf-df5d-4bc6-ae0c-9e3e8ca7b8bc'
             AND balance > 0
         );
 EOF
         services_started=true
     fi
-    
+
     # Start backend if not running
     if ! check_port 4242; then
         start_service "Backend" 4242 "bun run start-server"
         services_started=true
     fi
-    
+
     # Start web if not running
     if ! check_port 3000; then
         start_service "Web" 3000 "bun run start-web"
@@ -266,7 +267,7 @@ install_global_symlink() {
 
     sudo rm -f "$install_path" 2>/dev/null || true
     sudo ln -s "$source_path" "$install_path"
-    
+
     if [ $? -eq 0 ]; then
         echo -e "${GREEN}Global 'codebuff' command installed to $install_path${NC}"
         echo -e "${GREEN}You can now run 'codebuff' from any directory.${NC}"
@@ -280,7 +281,7 @@ install_global_symlink() {
 parse_infisical_project() {
     local args=( "$@" )
     local project_path="$INFISICAL_PROJECT_PATH"
-    
+
     for ((i=0; i<${#args[@]}; i++)); do
         if [[ "${args[i]}" == "--infisical-project" ]] && [[ -n "${args[i+1]}" ]]; then
             project_path="${args[i+1]}"
@@ -294,7 +295,7 @@ parse_infisical_project() {
 parse_cwd() {
     local args=( "$@" )
     local cwd="$PWD"
-    
+
     for ((i=0; i<${#args[@]}; i++)); do
         if [[ "${args[i]}" == "--cwd" ]] && [[ -n "${args[i+1]}" ]]; then
             cwd="${args[i+1]}"
@@ -307,15 +308,15 @@ parse_cwd() {
 # Main logic
 main() {
     local cwd=$(parse_cwd "$@")
-    
+
     if [ $# -eq 0 ]; then
         # Wenn keine Argumente, starte start-bin im codebuff-fork Verzeichnis mit cwd
         cd "$ROOT_DIR" && DISABLE_GOOGLE_CLOUD=true infisical run -- bun --cwd "$ROOT_DIR/npm-app" start-bin -- --cwd "$cwd"
         exit 0
     fi
-    
+
     local command=$1
-    
+
     case $command in
         start-bin)
             validate_directory "$cwd"
