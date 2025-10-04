@@ -1,6 +1,6 @@
-import { type SecretAgentDefinition } from '../../types/secret-agent-definition'
-import { publisher } from '../../constants'
-import researcher from '../researcher-grok-4-fast'
+import { type SecretAgentDefinition } from '../../types/secret-agent-definition';
+import { publisher } from '../../constants';
+import researcher from '../researcher-grok-4-fast';
 
 const definition: SecretAgentDefinition = {
   ...researcher,
@@ -14,6 +14,6 @@ const definition: SecretAgentDefinition = {
     'researcher-web-sonnet',
     'researcher-docs-sonnet',
   ],
-}
+};
 
-export default definition
+export default definition;

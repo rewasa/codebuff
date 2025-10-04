@@ -1,5 +1,5 @@
-import type { AgentDefinition } from './types/agent-definition'
-import { publisher } from './constants'
+import type { AgentDefinition } from './types/agent-definition';
+import { publisher } from './constants';
 
 const definition: AgentDefinition = {
   id: 'notion-researcher',
@@ -26,7 +26,10 @@ const definition: AgentDefinition = {
   mcpServers: {
     notionApi: {
       command: 'npx',
-      args: ['-y', '@notionhq/notion-mcp-server'],
+      args: [
+        '-y',
+        '@notionhq/notion-mcp-server',
+      ],
       env: {
         NOTION_TOKEN: 'ntn_***',
       },
@@ -41,6 +44,6 @@ const definition: AgentDefinition = {
 - Once you have gathered some information, spawn more notion agents to gather even more information to answer the user's question in the best way possible.
 - Write up a comprehensive report of the information gathered from the notion agents. No need to include the ids of the blocks/pages/databases in the report.
 `,
-}
+};
 
-export default definition
+export default definition;
