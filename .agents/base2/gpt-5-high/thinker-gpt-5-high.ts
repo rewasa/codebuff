@@ -1,6 +1,6 @@
 import type { AgentDefinition } from '../../types/agent-definition';
 
-import gpt5Thinker from '../../deep-thinking/gpt5-thinker';
+import gpt5Thinker from '../../thinker/gpt5-thinker';
 
 const definition: AgentDefinition = {
   ...gpt5Thinker,
