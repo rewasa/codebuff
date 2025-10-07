@@ -1,5 +1,5 @@
 import { publisher } from './constants';
-import { thinker } from './factory/thinker';
+import { thinker } from './thinker/thinker';
 
 import type { SecretAgentDefinition } from './types/secret-agent-definition';
 
