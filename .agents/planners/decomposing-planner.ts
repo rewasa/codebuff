@@ -1,5 +1,5 @@
-import { publisher } from '../constants'
-import { type SecretAgentDefinition } from '../types/secret-agent-definition'
+import { publisher } from '../constants';
+import { type SecretAgentDefinition } from '../types/secret-agent-definition';
 
 const definition: SecretAgentDefinition = {
   id: 'decomposing-planner',
@@ -63,6 +63,6 @@ Things to avoid:
 - over-engineering or adding features not requested
 </guidelines>
 `,
-}
+};
 
-export default definition
+export default definition;

@@ -1,5 +1,5 @@
-import { type SecretAgentDefinition } from '../types/secret-agent-definition'
-import decomposingPlanner from './decomposing-planner'
+import { type SecretAgentDefinition } from '../types/secret-agent-definition';
+import decomposingPlanner from './decomposing-planner';
 
 const definition: SecretAgentDefinition = {
   ...decomposingPlanner,
@@ -8,7 +8,10 @@ const definition: SecretAgentDefinition = {
   model: 'anthropic/claude-sonnet-4.5',
   spawnerPrompt:
     'Creates a better implementation plan by decomposing the task into smaller plans in parallel and synthesizing them into a final plan. Includes full code changes.',
-  spawnableAgents: ['file-explorer', 'implementation-planner-lite'],
-}
+  spawnableAgents: [
+    'researcher-file-explorer',
+    'implementation-planner-lite',
+  ],
+};
 
-export default definition
+export default definition;
