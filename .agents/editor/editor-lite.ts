@@ -1,9 +1,9 @@
-import { Message } from 'types/util-types'
-import { publisher } from '../constants'
+import { Message } from 'types/util-types';
+import { publisher } from '../constants';
 import {
   PLACEHOLDER,
   type SecretAgentDefinition,
-} from '../types/secret-agent-definition'
+} from '../types/secret-agent-definition';
 
 const editor: SecretAgentDefinition = {
   id: 'editor-lite',
@@ -84,27 +84,27 @@ ${PLACEHOLDER.KNOWLEDGE_FILES_CONTENTS}`,
 `,
 
   handleSteps: function* ({ agentState: initialAgentState }) {
-    const stepLimit = 35
-    let stepCount = 0
-    let agentState = initialAgentState
-    let accumulatedEditToolResults: any[] = []
+    const stepLimit = 35;
+    let stepCount = 0;
+    let agentState = initialAgentState;
+    let accumulatedEditToolResults: any[] = [];
 
     while (true) {
-      stepCount++
+      stepCount++;
 
-      const stepResult = yield 'STEP'
-      agentState = stepResult.agentState // Capture the latest state
+      const stepResult = yield 'STEP';
+      agentState = stepResult.agentState; // Capture the latest state
 
       // Accumulate new tool messages from this step
-      const { messageHistory } = agentState
+      const { messageHistory } = agentState;
 
       // Extract and accumulate new edit tool results using helper function
       accumulatedEditToolResults.push(
         ...getLatestEditToolResults(messageHistory),
-      )
+      );
 
       if (stepResult.stepsComplete) {
-        break
+        break;
       }
 
       // If we've reached within one of the step limit, ask LLM to summarize progress
@@ -117,17 +117,17 @@ ${PLACEHOLDER.KNOWLEDGE_FILES_CONTENTS}`,
               'You have reached the step limit. Please use the set_output tool now to summarize your progress so far including all specific actions you took (note that any file changes will be included automatically in the output), what you still need to solve, and provide any insights that could help complete the remaining work. Please end your turn after using the set_output tool with the end_turn tool.',
           },
           includeToolCall: false,
-        }
+        };
 
         // One final step to produce the summary
-        const finalStepResult = yield 'STEP'
-        agentState = finalStepResult.agentState
+        const finalStepResult = yield 'STEP';
+        agentState = finalStepResult.agentState;
 
         // Extract and accumulate final edit tool results using helper function
         accumulatedEditToolResults.push(
           ...getLatestEditToolResults(agentState.messageHistory),
-        )
-        break
+        );
+        break;
       }
     }
 
@@ -137,12 +137,12 @@ ${PLACEHOLDER.KNOWLEDGE_FILES_CONTENTS}`,
         ...agentState.output,
         edits: accumulatedEditToolResults,
       },
-    }
+    };
 
     function getLatestEditToolResults(messageHistory: Message[]) {
       const lastAssistantMessageIndex = messageHistory.findLastIndex(
         (message) => message.role === 'assistant',
-      )
+      );
 
       // Get all edit tool messages after the last assistant message
       const newToolMessages = messageHistory
@@ -152,7 +152,7 @@ ${PLACEHOLDER.KNOWLEDGE_FILES_CONTENTS}`,
           (message) =>
             message.content.toolName === 'write_file' ||
             message.content.toolName === 'str_replace',
-        )
+        );
 
       // Extract and return new edit tool results
       return (
@@ -165,9 +165,9 @@ ${PLACEHOLDER.KNOWLEDGE_FILES_CONTENTS}`,
             (toolResult) =>
               toolResult && !('errorMessage' in (toolResult as any)),
           )
-      )
+      );
     }
   },
-}
+};
 
-export default editor
+export default editor;
