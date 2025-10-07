@@ -3,8 +3,7 @@ import { base } from './factory/base.ts';
 
 import type { SecretAgentDefinition } from './types/secret-agent-definition';
 
-const definition: SecretAgentDefinition & { mcpServers?: Record<string, any> } =
-  {
+const definition: SecretAgentDefinition = {
     id: 'agentselly-mongodb-mcp',
     publisher,
     ...base('anthropic/claude-4.5-sonnet', 'normal'),
