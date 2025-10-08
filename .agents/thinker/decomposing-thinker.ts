@@ -1,6 +1,6 @@
-import { publisher } from '../constants'
+import { publisher } from '../constants';
 
-import type { SecretAgentDefinition } from '../types/secret-agent-definition'
+import type { SecretAgentDefinition } from '../types/secret-agent-definition';
 
 const definition: SecretAgentDefinition = {
   id: 'decomposing-thinker',
@@ -28,11 +28,14 @@ const definition: SecretAgentDefinition = {
   inheritParentSystemPrompt: true,
   includeMessageHistory: true,
   outputMode: 'structured_output',
-  toolNames: ['spawn_agents', 'set_output'],
+  toolNames: [
+    'spawn_agents',
+    'set_output',
+  ],
   spawnableAgents: ['thinker-sonnet'],
 
   handleSteps: function* ({ params }) {
-    const prompts: string[] = params?.prompts ?? []
+    const prompts: string[] = params?.prompts ?? [];
     const { toolResult } = yield {
       toolName: 'spawn_agents',
       input: {
@@ -41,16 +44,16 @@ const definition: SecretAgentDefinition = {
           prompt: promptText,
         })),
       },
-    }
+    };
 
     const thoughts = toolResult
       ? toolResult.map((result) => (result.type === 'json' ? result.value : ''))
-      : []
+      : [];
     yield {
       toolName: 'set_output',
       input: { results: thoughts },
-    }
+    };
   },
-}
+};
 
-export default definition
+export default definition;

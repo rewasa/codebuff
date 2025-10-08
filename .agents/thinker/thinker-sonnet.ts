@@ -1,6 +1,6 @@
-import { publisher } from '../constants'
+import { publisher } from '../constants';
 
-import type { SecretAgentDefinition } from '../types/secret-agent-definition'
+import type { SecretAgentDefinition } from '../types/secret-agent-definition';
 
 const definition: SecretAgentDefinition = {
   id: 'thinker-sonnet',
@@ -33,6 +33,6 @@ You must be extremely concise and to the point.
 
 **Important**: Do not use any tools! You are only thinking!
 `.trim(),
-}
+};
 
-export default definition
+export default definition;

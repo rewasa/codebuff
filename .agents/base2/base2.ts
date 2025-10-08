@@ -1,8 +1,8 @@
-import { publisher } from '../constants'
+import { publisher } from '../constants';
 import {
   PLACEHOLDER,
   type SecretAgentDefinition,
-} from '../types/secret-agent-definition'
+} from '../types/secret-agent-definition';
 
 const definition: SecretAgentDefinition = {
   id: 'base2',
@@ -28,7 +28,11 @@ const definition: SecretAgentDefinition = {
   },
   outputMode: 'last_message',
   includeMessageHistory: true,
-  toolNames: ['spawn_agents', 'read_files', 'code_search'],
+  toolNames: [
+    'spawn_agents',
+    'read_files',
+    'code_search',
+  ],
   spawnableAgents: [
     'read-only-commander',
     'researcher-file-explorer',
@@ -93,9 +97,9 @@ Feel free to modify this workflow as needed. It's good to spawn different agents
 `,
 
   handleSteps: function* ({ prompt, params }) {
-    let steps = 0
+    let steps = 0;
     while (true) {
-      steps++
+      steps++;
       // Run context-pruner before each step
       yield {
         toolName: 'spawn_agent_inline',
@@ -104,12 +108,12 @@ Feel free to modify this workflow as needed. It's good to spawn different agents
           params: params ?? {},
         },
         includeToolCall: false,
-      } as any
+      } as any;
 
-      const { stepsComplete } = yield 'STEP'
-      if (stepsComplete) break
+      const { stepsComplete } = yield 'STEP';
+      if (stepsComplete) break;
     }
   },
-}
+};
 
-export default definition
+export default definition;
