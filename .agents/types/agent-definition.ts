@@ -33,11 +33,14 @@ export interface AgentDefinition {
   publisher?: string;
 
   /** MCP (Model Context Protocol) servers configuration for the agent */
-  mcpServers?: Record<string, {
-    command: string;
-    args?: string[];
-    env?: Record<string, string>;
-  }>;
+  mcpServers?: Record<
+    string,
+    {
+      command: string;
+      args?: string[];
+      env?: Record<string, string>;
+    }
+  >;
 
   /** Human-readable name for the agent */
   displayName: string;
