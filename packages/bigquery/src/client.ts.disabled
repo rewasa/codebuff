@@ -1,4 +1,4 @@
-import { logger } from '@codebuff/common/util/logger'
+import { logger } from '../../common/src/util/logger'
 import { BigQuery } from '@google-cloud/bigquery'
 
 import { MockBigQuery } from './mock-client'

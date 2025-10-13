@@ -1,7 +1,7 @@
-import { publisher } from './constants.ts';
-import baseLite from './base-lite.ts';
+import { publisher } from '../constants';
+import baseLite from './base-lite';
 
-import type { SecretAgentDefinition } from './types/secret-agent-definition.ts';
+import type { SecretAgentDefinition } from '../types/secret-agent-definition';
 
 const definition: SecretAgentDefinition = {
   ...baseLite,

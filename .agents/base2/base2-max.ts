@@ -1,5 +1,5 @@
-import { createBase2 } from './base2'
+import { base2 } from './base2-factory'
 
-const definition = { ...createBase2('max'), id: 'base2-max' }
+const definition = { ...base2('anthropic/claude-4.5-sonnet'), id: 'base2-max' }
 
 export default definition

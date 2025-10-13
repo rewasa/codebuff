@@ -1,2 +1,2 @@
-export * from './ask-prompts';
-export * from './base-prompts';
+export * from '../base/base-prompts';
+export * from '../base/ask';

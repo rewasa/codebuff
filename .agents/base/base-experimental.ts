@@ -1,4 +1,4 @@
-import { reviewer } from './reviewer-factory';
+import { reviewer } from '../reviewer/reviewer-factory';
 
 import type { SecretAgentDefinition } from '../types/secret-agent-definition';
 

@@ -1,0 +1,6 @@
+# BigQuery fork safety - merge strategy
+# Always keep our version of index.ts (with mock client)
+src/index.ts merge=ours
+
+# Keep our environment configuration
+../../.envrc merge=ours

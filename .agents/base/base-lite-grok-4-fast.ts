@@ -1,4 +1,4 @@
-import { publisher } from './constants';
+import { publisher } from '../constants';
 import {
   PLACEHOLDER,
   SecretAgentDefinition,

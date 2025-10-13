@@ -1,0 +1,6 @@
+# BigQuery fork safety
+# Always ignore the real client to prevent accidental commits
+src/client.ts
+
+# Keep the disabled version tracked
+!src/client.ts.disabled

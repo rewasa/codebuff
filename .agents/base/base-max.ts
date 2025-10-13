@@ -1,7 +1,7 @@
-import { publisher } from './constants';
-import { base } from './factory/base.ts';
+import { publisher } from '../constants';
+import { base } from './base-factory';
 
-import type { SecretAgentDefinition } from './types/secret-agent-definition';
+import type { SecretAgentDefinition } from '../types/secret-agent-definition';
 
 const definition: SecretAgentDefinition = {
   id: 'base-max',
