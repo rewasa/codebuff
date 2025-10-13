@@ -14,7 +14,8 @@ const REDIRECT_URI = `http://localhost:${PORT}/oauth2callback`;
 const SCOPES = [
   'https://www.googleapis.com/auth/presentations',
   'https://www.googleapis.com/auth/presentations.readonly',
-  'https://www.googleapis.com/auth/drive.readonly'
+  'https://www.googleapis.com/auth/drive',
+  'https://www.googleapis.com/auth/drive.file'
 ].join(' ');
 
 if (!CLIENT_ID || !CLIENT_SECRET) {

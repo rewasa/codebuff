@@ -25,7 +25,10 @@
     "@codebuff/backend": "workspace:*",
     "@codebuff/bigquery": "workspace:*",
     "@codebuff/common": "workspace:*",
-    "lodash": "^4.17.21"
+    "google-auth-library": "^10.4.0",
+    "googleapis": "^162.0.0",
+    "lodash": "^4.17.21",
+    "mongodb": "^6.10.0"
   },
   "devDependencies": {
     "@types/bun": "^1.2.11",
